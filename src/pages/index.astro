@@ -1,0 +1,196 @@
+---
+import Layout from '../layouts/Layout.astro';
+
+const episodes = [
+  {
+    title: "PyTorch FSDP: Experiences on Scaling Fully Sharded Data Parallel",
+    authors: "Zhao et al.",
+    year: 2023,
+    duration: "24 min",
+    folder: "zhao-2023-pytorch-fsdp",
+    description: "Meta's production experiences building fully sharded data parallel training into PyTorch.",
+    topics: ["Distributed Training", "Memory Optimization", "PyTorch"]
+  }
+];
+---
+
+<Layout title="Episodes">
+  <header class="hero">
+    <h1>Strollcast</h1>
+    <p class="tagline">Listen to research papers while you stroll.</p>
+  </header>
+
+  <section class="intro">
+    <p>
+      Strollcast transforms dense academic papers into engaging audio podcasts.
+      Each episode features a conversational format with two hosts breaking down
+      complex concepts into accessible explanations—perfect for walks, commutes,
+      or any time you're on the move.
+    </p>
+  </section>
+
+  <section class="episodes">
+    <h2>Episodes</h2>
+    <div class="episode-grid">
+      {episodes.map((episode) => (
+        <article class="episode-card">
+          <div class="episode-meta">
+            <span class="year">{episode.year}</span>
+            <span class="duration">{episode.duration}</span>
+          </div>
+          <h3>{episode.title}</h3>
+          <p class="authors">{episode.authors}</p>
+          <p class="description">{episode.description}</p>
+          <div class="topics">
+            {episode.topics.map((topic) => (
+              <span class="topic">{topic}</span>
+            ))}
+          </div>
+          <div class="episode-actions">
+            <a href={`/${episode.folder}/podcast.m4a`} class="btn btn-primary" download>
+              Download Episode
+            </a>
+            <a href={`/${episode.folder}/script.md`} class="btn btn-secondary">
+              View Transcript
+            </a>
+          </div>
+        </article>
+      ))}
+    </div>
+  </section>
+</Layout>
+
+<style>
+  .hero {
+    text-align: center;
+    margin-bottom: 3rem;
+  }
+
+  .tagline {
+    font-size: 1.25rem;
+    color: var(--text-secondary);
+  }
+
+  .intro {
+    max-width: 700px;
+    margin: 0 auto 3rem;
+    text-align: center;
+  }
+
+  .intro p {
+    font-size: 1.1rem;
+    line-height: 1.8;
+  }
+
+  .episodes h2 {
+    margin-bottom: 1.5rem;
+  }
+
+  .episode-grid {
+    display: grid;
+    gap: 1.5rem;
+  }
+
+  .episode-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 1.5rem;
+    transition: border-color 0.2s, transform 0.2s;
+  }
+
+  .episode-card:hover {
+    border-color: var(--accent);
+    transform: translateY(-2px);
+  }
+
+  .episode-meta {
+    display: flex;
+    gap: 1rem;
+    margin-bottom: 0.75rem;
+  }
+
+  .year, .duration {
+    font-size: 0.875rem;
+    color: var(--text-secondary);
+    background: var(--bg-secondary);
+    padding: 0.25rem 0.75rem;
+    border-radius: 100px;
+  }
+
+  .episode-card h3 {
+    margin: 0 0 0.5rem;
+    font-size: 1.25rem;
+  }
+
+  .authors {
+    color: var(--accent);
+    font-weight: 500;
+    margin-bottom: 0.75rem;
+  }
+
+  .description {
+    margin-bottom: 1rem;
+  }
+
+  .topics {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin-bottom: 1.5rem;
+  }
+
+  .topic {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    border: 1px solid var(--border);
+    padding: 0.25rem 0.5rem;
+    border-radius: 4px;
+  }
+
+  .episode-actions {
+    display: flex;
+    gap: 1rem;
+    flex-wrap: wrap;
+  }
+
+  .btn {
+    display: inline-block;
+    padding: 0.75rem 1.25rem;
+    border-radius: 8px;
+    font-weight: 500;
+    font-size: 0.875rem;
+    transition: all 0.2s;
+  }
+
+  .btn-primary {
+    background: var(--accent);
+    color: white;
+  }
+
+  .btn-primary:hover {
+    background: var(--accent-hover);
+    color: white;
+  }
+
+  .btn-secondary {
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--text-primary);
+  }
+
+  .btn-secondary:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+
+  @media (max-width: 640px) {
+    .episode-actions {
+      flex-direction: column;
+    }
+
+    .btn {
+      text-align: center;
+    }
+  }
+</style>
