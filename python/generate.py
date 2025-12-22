@@ -2,6 +2,7 @@
 """
 Generate podcast audio using ElevenLabs for realistic voices.
 Uses ffmpeg for audio processing (no pydub dependency).
+Caches ElevenLabs API responses locally to save quota.
 
 Usage:
     python generate.py <episode-folder>
@@ -11,8 +12,11 @@ Example:
 """
 
 import argparse
+import hashlib
+import json
 import os
 import re
+import shutil
 import subprocess
 from pathlib import Path
 from elevenlabs import ElevenLabs
@@ -25,6 +29,40 @@ if not API_KEY:
 # ElevenLabs voice IDs - using pre-made voices
 ALEX_VOICE = "pNInz6obpgDQGcFmaJgB"  # Adam - deep male voice
 MAYA_VOICE = "21m00Tcm4TlvDq8ikWAM"  # Rachel - clear female voice
+
+# Cache directory
+CACHE_DIR = Path(__file__).parent / ".cache"
+MODEL_ID = "eleven_turbo_v2_5"
+
+
+def get_cache_key(text, voice_id):
+    """Generate a cache key based on text, voice, and model settings."""
+    cache_data = json.dumps({
+        "text": text,
+        "voice_id": voice_id,
+        "model_id": MODEL_ID,
+        "stability": 0.5,
+        "similarity_boost": 0.75,
+        "style": 0.0,
+    }, sort_keys=True)
+    return hashlib.sha256(cache_data.encode()).hexdigest()
+
+
+def get_cached_audio(cache_key):
+    """Check if audio exists in cache and return path if so."""
+    cache_path = CACHE_DIR / f"{cache_key}.mp3"
+    if cache_path.exists():
+        return cache_path
+    return None
+
+
+def save_to_cache(cache_key, audio_data):
+    """Save audio data to cache."""
+    CACHE_DIR.mkdir(exist_ok=True)
+    cache_path = CACHE_DIR / f"{cache_key}.mp3"
+    with open(cache_path, 'wb') as f:
+        f.write(audio_data)
+    return cache_path
 
 
 def parse_podcast_script(filepath):
@@ -70,12 +108,21 @@ def parse_podcast_script(filepath):
 
 
 def generate_audio_elevenlabs(client, text, voice_id, output_path):
-    """Generate audio using ElevenLabs API."""
+    """Generate audio using ElevenLabs API with caching."""
+    cache_key = get_cache_key(text, voice_id)
+
+    # Check cache first
+    cached_path = get_cached_audio(cache_key)
+    if cached_path:
+        shutil.copy(cached_path, output_path)
+        return "cached"
+
+    # Generate new audio via API
     try:
         audio_generator = client.text_to_speech.convert(
             voice_id=voice_id,
             text=text,
-            model_id="eleven_turbo_v2_5",
+            model_id=MODEL_ID,
             voice_settings={
                 "stability": 0.5,
                 "similarity_boost": 0.75,
@@ -87,13 +134,17 @@ def generate_audio_elevenlabs(client, text, voice_id, output_path):
         # Collect all chunks from the generator
         audio_data = b''.join(chunk for chunk in audio_generator)
 
+        # Save to cache
+        save_to_cache(cache_key, audio_data)
+
+        # Write to output
         with open(output_path, 'wb') as f:
             f.write(audio_data)
 
-        return True
+        return "generated"
     except Exception as e:
         print(f"\nError generating audio: {e}")
-        return False
+        return None
 
 
 def generate_silence(output_path, duration_ms=500):
@@ -196,10 +247,12 @@ def main():
 
     # Generate audio for each segment
     print("\n[3/5] Generating audio segments with ElevenLabs...")
-    print("      (This may take several minutes)")
+    print("      (Using cache when available)")
 
     audio_files = []
     total = len(segments)
+    cache_hits = 0
+    api_calls = 0
 
     for i, segment in enumerate(segments):
         speaker = segment['speaker']
@@ -213,12 +266,18 @@ def main():
         else:
             voice_id = ALEX_VOICE if speaker == 'ALEX' else MAYA_VOICE
 
-            if generate_audio_elevenlabs(client, text, voice_id, output_path):
+            result = generate_audio_elevenlabs(client, text, voice_id, output_path)
+            if result:
                 audio_files.append(output_path)
                 # Add a small pause after each segment
                 pause_path = temp_dir / f"pause_{i:04d}.mp3"
                 generate_silence(pause_path, 300)
                 audio_files.append(pause_path)
+
+                if result == "cached":
+                    cache_hits += 1
+                else:
+                    api_calls += 1
 
         # Progress indicator
         pct = (i + 1) * 100 // total
@@ -226,6 +285,7 @@ def main():
         print(f"\r      [{bar}] {pct}% ({i+1}/{total})", end='', flush=True)
 
     print(f"\n      Generated {len(audio_files)} audio files")
+    print(f"      Cache hits: {cache_hits}, API calls: {api_calls}")
 
     # Combine all segments
     print("\n[4/5] Combining audio segments with ffmpeg...")
