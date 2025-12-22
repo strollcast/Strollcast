@@ -27,13 +27,13 @@ ElevenLabs voice IDs:
   - `README.md` - Episode metadata
 - `python/` - Podcast generation tools
   - `generate.py` - ElevenLabs TTS script
-  - `requirements.txt` - Python dependencies
+  - `pixi.toml` - Pixi package manager configuration
 
 ## Adding New Episodes
 
 1. Create folder in `public/` named `<author>-<year>-<short-name>`
 2. Add `script.md` with the podcast transcript
-3. Run `python python/generate.py public/<episode-folder>` to generate audio
+3. Run `cd python && pixi run python generate.py ../public/<episode-folder>` to generate audio
 4. Add `README.md` with episode metadata
 5. Update `src/pages/index.astro` episodes array
 

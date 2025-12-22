@@ -1,0 +1,17 @@
+[workspace]
+name = "strollcast"
+version = "0.1.0"
+description = "Podcast generation for Strollcast"
+channels = ["conda-forge"]
+platforms = ["osx-arm64", "osx-64", "linux-64"]
+
+[tasks]
+generate = "python generate.py"
+
+[dependencies]
+python = ">=3.11"
+pip = "*"
+wheel = "*"
+
+[pypi-dependencies]
+elevenlabs = "*"

@@ -32,8 +32,8 @@ From the repository root:
 
 ```bash
 export ELEVENLABS_API_KEY="your-api-key"
-pip install -r python/requirements.txt
-python python/generate.py public/zhao-2023-pytorch-fsdp
+cd python
+pixi run python generate.py ../public/zhao-2023-pytorch-fsdp
 ```
 
 Requires `ffmpeg` for audio processing.

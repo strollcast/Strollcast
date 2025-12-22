@@ -30,13 +30,14 @@ The `python/` folder contains the podcast generation script that uses ElevenLabs
 
 ```bash
 export ELEVENLABS_API_KEY="your-api-key"
-pip install -r python/requirements.txt
-python python/generate.py public/<episode-folder>
+cd python
+pixi run python generate.py ../public/<episode-folder>
 ```
 
 Example:
 ```bash
-python python/generate.py public/zhao-2023-pytorch-fsdp
+cd python
+pixi run python generate.py ../public/zhao-2023-pytorch-fsdp
 ```
 
 Requires `ffmpeg` for audio processing.
