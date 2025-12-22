@@ -11,7 +11,11 @@ This is an Astro-based static website that hosts audio podcasts explaining ML re
 
 ## Voice Configuration
 
-ElevenLabs voice IDs:
+### macOS TTS (preview)
+- **Eric:** Daniel (British male)
+- **Maya:** Samantha (American female)
+
+### ElevenLabs (production)
 - **Eric:** `gP8LZQ3GGokV0MP5JYjg` - Male voice
 - **Maya:** `21m00Tcm4TlvDq8ikWAM` - Rachel, clear female voice
 
@@ -33,15 +37,17 @@ ElevenLabs voice IDs:
 
 1. Create folder in `public/` named `<author>-<year>-<short-name>`
 2. Add `script.md` with the podcast transcript
-3. Run `cd python && pixi run python generate.py ../public/<episode-folder>` to generate audio
-4. Add `README.md` with episode metadata
-5. Update `src/pages/index.astro` episodes array
+3. Preview with macOS TTS to check duration: `cd python && pixi run python generate.py ../public/<episode-folder> --preview`
+4. Generate production audio: `cd python && pixi run python generate.py ../public/<episode-folder>`
+5. Add `README.md` with episode metadata
+6. Update `src/pages/index.astro` episodes array
 
 ## Tech Stack
 
 - Astro (static site generator)
 - GitHub Pages (hosting)
-- ElevenLabs (text-to-speech)
+- ElevenLabs (production text-to-speech)
+- macOS TTS (preview text-to-speech)
 - ffmpeg (audio processing)
 
 ## Commands

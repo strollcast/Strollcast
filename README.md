@@ -26,7 +26,22 @@ npm run build
 
 ## Generating Podcasts
 
-The `python/` folder contains the podcast generation script that uses ElevenLabs for text-to-speech:
+The `python/` folder contains the podcast generation script with two TTS backends:
+
+### Preview with macOS TTS (free, fast)
+
+Use `--preview` to quickly evaluate podcast length with built-in macOS voices:
+
+```bash
+cd python
+pixi run python generate.py ../public/<episode-folder> --preview
+```
+
+This creates a `<episode>-preview.m4a` file for evaluation.
+
+### Production with ElevenLabs (high quality)
+
+For production-quality audio:
 
 ```bash
 export ELEVENLABS_API_KEY="your-api-key"
@@ -34,11 +49,7 @@ cd python
 pixi run python generate.py ../public/<episode-folder>
 ```
 
-Example:
-```bash
-cd python
-pixi run python generate.py ../public/zhao-2023-pytorch-fsdp
-```
+ElevenLabs responses are cached locally to save API quota on re-runs.
 
 Requires `ffmpeg` for audio processing.
 

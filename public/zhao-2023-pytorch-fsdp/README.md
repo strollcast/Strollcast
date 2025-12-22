@@ -31,8 +31,13 @@ This podcast episode covers Meta's paper on PyTorch FSDP (Fully Sharded Data Par
 From the repository root:
 
 ```bash
-export ELEVENLABS_API_KEY="your-api-key"
 cd python
+
+# Preview with macOS TTS (free, fast)
+pixi run python generate.py ../public/zhao-2023-pytorch-fsdp --preview
+
+# Production with ElevenLabs
+export ELEVENLABS_API_KEY="your-api-key"
 pixi run python generate.py ../public/zhao-2023-pytorch-fsdp
 ```
 

@@ -31,8 +31,13 @@ This podcast episode covers Microsoft's ZeRO paper, which introduced memory-effi
 From the repository root:
 
 ```bash
-export ELEVENLABS_API_KEY="your-api-key"
 cd python
+
+# Preview with macOS TTS (free, fast)
+pixi run python generate.py ../public/rajbhandari-2020-zero --preview
+
+# Production with ElevenLabs
+export ELEVENLABS_API_KEY="your-api-key"
 pixi run python generate.py ../public/rajbhandari-2020-zero
 ```
 

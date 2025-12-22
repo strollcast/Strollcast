@@ -1,14 +1,18 @@
 #!/usr/bin/env python3
 """
-Generate podcast audio using ElevenLabs for realistic voices.
-Uses ffmpeg for audio processing (no pydub dependency).
-Caches ElevenLabs API responses locally to save quota.
+Generate podcast audio from a script.
+
+Supports two TTS backends:
+- macOS: Uses built-in 'say' command (free, fast, for previewing)
+- ElevenLabs: High-quality AI voices (requires API key)
 
 Usage:
-    python generate.py <episode-folder>
+    python generate.py <episode-folder>              # ElevenLabs (production)
+    python generate.py <episode-folder> --preview    # macOS TTS (preview)
 
 Example:
-    python generate.py public/zhao-2023-pytorch-fsdp
+    python generate.py ../public/zhao-2023-pytorch-fsdp --preview
+    python generate.py ../public/zhao-2023-pytorch-fsdp
 """
 
 import argparse
@@ -19,18 +23,16 @@ import re
 import shutil
 import subprocess
 from pathlib import Path
-from elevenlabs import ElevenLabs
 
-# Configuration - set ELEVENLABS_API_KEY environment variable
-API_KEY = os.environ.get("ELEVENLABS_API_KEY")
-if not API_KEY:
-    raise ValueError("Please set ELEVENLABS_API_KEY environment variable")
+# macOS TTS voices
+MACOS_ERIC_VOICE = "Daniel"   # British male
+MACOS_MAYA_VOICE = "Samantha" # American female
 
-# ElevenLabs voice IDs - using pre-made voices
-ERIC_VOICE = "gP8LZQ3GGokV0MP5JYjg"  # Eric - male voice
-MAYA_VOICE = "21m00Tcm4TlvDq8ikWAM"  # Rachel - clear female voice
+# ElevenLabs voice IDs
+ELEVENLABS_ERIC_VOICE = "gP8LZQ3GGokV0MP5JYjg"  # Eric - male voice
+ELEVENLABS_MAYA_VOICE = "21m00Tcm4TlvDq8ikWAM"  # Rachel - clear female voice
 
-# Cache directory
+# Cache directory and model settings
 CACHE_DIR = Path(__file__).parent / ".cache"
 MODEL_ID = "eleven_turbo_v2_5"
 
@@ -105,6 +107,32 @@ def parse_podcast_script(filepath):
             })
 
     return segments
+
+
+def generate_audio_macos(text, voice, output_path):
+    """Generate audio using macOS 'say' command."""
+    # Generate AIFF first, then convert to MP3
+    aiff_path = output_path.with_suffix('.aiff')
+
+    cmd_say = ['say', '-v', voice, '-o', str(aiff_path), text]
+    result = subprocess.run(cmd_say, capture_output=True)
+
+    if result.returncode != 0:
+        return False
+
+    # Convert to MP3 using ffmpeg
+    cmd_convert = [
+        'ffmpeg', '-y', '-i', str(aiff_path),
+        '-c:a', 'libmp3lame', '-q:a', '2',
+        str(output_path)
+    ]
+    result = subprocess.run(cmd_convert, capture_output=True)
+
+    # Clean up AIFF
+    if aiff_path.exists():
+        aiff_path.unlink()
+
+    return result.returncode == 0
 
 
 def generate_audio_elevenlabs(client, text, voice_id, output_path):
@@ -194,11 +222,22 @@ def get_audio_duration(filepath):
 
 def main():
     parser = argparse.ArgumentParser(
-        description='Generate podcast audio from a script using ElevenLabs.'
+        description='Generate podcast audio from a script.',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  python generate.py ../public/zhao-2023-pytorch-fsdp --preview   # Fast preview with macOS TTS
+  python generate.py ../public/zhao-2023-pytorch-fsdp             # Production with ElevenLabs
+        """
     )
     parser.add_argument(
         'episode_folder',
         help='Path to the episode folder containing script.md'
+    )
+    parser.add_argument(
+        '--preview',
+        action='store_true',
+        help='Use macOS TTS for quick preview (no API key needed)'
     )
     args = parser.parse_args()
 
@@ -215,23 +254,36 @@ def main():
         return 1
 
     episode_name = episode_dir.name
+    use_macos = args.preview
 
     print("=" * 60)
     print(f"Podcast Generator: {episode_name}")
+    print(f"Backend: {'macOS TTS (preview)' if use_macos else 'ElevenLabs'}")
     print("=" * 60)
 
-    # Initialize ElevenLabs client
-    print("\n[1/5] Initializing ElevenLabs client...")
-    client = ElevenLabs(api_key=API_KEY)
+    # Initialize ElevenLabs client if needed
+    client = None
+    if not use_macos:
+        api_key = os.environ.get("ELEVENLABS_API_KEY")
+        if not api_key:
+            print("\nError: ELEVENLABS_API_KEY not set.")
+            print("Use --preview for macOS TTS, or set the API key.")
+            return 1
 
-    # Check available characters
-    try:
-        subscription = client.user.get_subscription()
-        print(f"      Character limit: {subscription.character_count}/{subscription.character_limit}")
-        remaining = subscription.character_limit - subscription.character_count
-        print(f"      Remaining: {remaining:,} characters")
-    except Exception as e:
-        print(f"      Could not fetch subscription info: {e}")
+        from elevenlabs import ElevenLabs
+        print("\n[1/5] Initializing ElevenLabs client...")
+        client = ElevenLabs(api_key=api_key)
+
+        # Check available characters
+        try:
+            subscription = client.user.get_subscription()
+            print(f"      Character limit: {subscription.character_count}/{subscription.character_limit}")
+            remaining = subscription.character_limit - subscription.character_count
+            print(f"      Remaining: {remaining:,} characters")
+        except Exception as e:
+            print(f"      Could not fetch subscription info: {e}")
+    else:
+        print("\n[1/5] Using macOS TTS (no API key needed)...")
 
     # Create temp directory
     temp_dir.mkdir(exist_ok=True)
@@ -246,8 +298,10 @@ def main():
     print(f"      Total characters to synthesize: {total_chars:,}")
 
     # Generate audio for each segment
-    print("\n[3/5] Generating audio segments with ElevenLabs...")
-    print("      (Using cache when available)")
+    backend_name = "macOS TTS" if use_macos else "ElevenLabs"
+    print(f"\n[3/5] Generating audio segments with {backend_name}...")
+    if not use_macos:
+        print("      (Using cache when available)")
 
     audio_files = []
     total = len(segments)
@@ -264,20 +318,28 @@ def main():
             generate_silence(output_path, 800)
             audio_files.append(output_path)
         else:
-            voice_id = ERIC_VOICE if speaker == 'ERIC' else MAYA_VOICE
+            if use_macos:
+                voice = MACOS_ERIC_VOICE if speaker == 'ERIC' else MACOS_MAYA_VOICE
+                if generate_audio_macos(text, voice, output_path):
+                    audio_files.append(output_path)
+                    # Add a small pause after each segment
+                    pause_path = temp_dir / f"pause_{i:04d}.mp3"
+                    generate_silence(pause_path, 300)
+                    audio_files.append(pause_path)
+            else:
+                voice_id = ELEVENLABS_ERIC_VOICE if speaker == 'ERIC' else ELEVENLABS_MAYA_VOICE
+                result = generate_audio_elevenlabs(client, text, voice_id, output_path)
+                if result:
+                    audio_files.append(output_path)
+                    # Add a small pause after each segment
+                    pause_path = temp_dir / f"pause_{i:04d}.mp3"
+                    generate_silence(pause_path, 300)
+                    audio_files.append(pause_path)
 
-            result = generate_audio_elevenlabs(client, text, voice_id, output_path)
-            if result:
-                audio_files.append(output_path)
-                # Add a small pause after each segment
-                pause_path = temp_dir / f"pause_{i:04d}.mp3"
-                generate_silence(pause_path, 300)
-                audio_files.append(pause_path)
-
-                if result == "cached":
-                    cache_hits += 1
-                else:
-                    api_calls += 1
+                    if result == "cached":
+                        cache_hits += 1
+                    else:
+                        api_calls += 1
 
         # Progress indicator
         pct = (i + 1) * 100 // total
@@ -285,11 +347,17 @@ def main():
         print(f"\r      [{bar}] {pct}% ({i+1}/{total})", end='', flush=True)
 
     print(f"\n      Generated {len(audio_files)} audio files")
-    print(f"      Cache hits: {cache_hits}, API calls: {api_calls}")
+    if not use_macos:
+        print(f"      Cache hits: {cache_hits}, API calls: {api_calls}")
 
     # Combine all segments
     print("\n[4/5] Combining audio segments with ffmpeg...")
-    m4a_output = episode_dir / f"{episode_name}.m4a"
+
+    # Use different filename for preview
+    if use_macos:
+        m4a_output = episode_dir / f"{episode_name}-preview.m4a"
+    else:
+        m4a_output = episode_dir / f"{episode_name}.m4a"
 
     if concatenate_with_ffmpeg(audio_files, m4a_output, temp_dir):
         print(f"      Created: {m4a_output.name}")
@@ -319,9 +387,14 @@ def main():
     print(f"\nPodcast saved to: {m4a_output}")
     print(f"Duration: {duration_minutes:.1f} minutes")
     print(f"Size: {size_mb:.1f} MB")
-    print("\nTo transfer to iPhone:")
-    print("  - AirDrop the file to your iPhone")
-    print("  - Or upload to iCloud Drive")
+
+    if use_macos:
+        print("\nThis is a PREVIEW using macOS TTS.")
+        print("For production quality, run without --preview flag.")
+    else:
+        print("\nTo transfer to iPhone:")
+        print("  - AirDrop the file to your iPhone")
+        print("  - Or upload to iCloud Drive")
 
     return 0
 
