@@ -6,7 +6,7 @@ Strollcast transforms dense academic papers into engaging audio podcasts. Each e
 
 ## iOS App
 
-Listen on the go with the native iOS app: [StrollcastApp](https://github.com/strollcast/StrollcastApp)
+Listen on the go with the native iOS app: [StrollcastApp](https://github.com/strollcast/StrollcastApp). Features offline downloads, background playback, synchronized transcripts with tap-to-seek, and Zotero integration for saving papers to your library.
 
 ## Episodes
 
