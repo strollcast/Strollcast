@@ -15,3 +15,12 @@ wheel = "*"
 
 [pypi-dependencies]
 elevenlabs = "*"
+boto3 = "*"
+
+[tasks.migrate]
+cmd = "python migrate_cache_to_r2.py"
+description = "Migrate local cache to R2 with normalization"
+
+[tasks.migrate-dry-run]
+cmd = "python migrate_cache_to_r2.py --dry-run"
+description = "Preview cache migration (no upload)"
