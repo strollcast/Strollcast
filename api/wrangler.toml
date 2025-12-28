@@ -1,0 +1,9 @@
+name = "strollcast-api"
+main = "src/index.ts"
+compatibility_date = "2024-12-01"
+account_id = "24828d2a24b818aa2e994213d8a562c6"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "strollcast"
+database_id = "9c9e8c33-9960-46d2-a092-7a7a239a5c5e"
