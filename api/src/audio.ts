@@ -404,8 +404,8 @@ export async function uploadEpisode(
     httpMetadata: { contentType: "audio/mpeg" },
   });
 
-  // Return public URL
-  return `https://pub-f40a64196d5c4a46bd8d57e962549ede.r2.dev/${key}`;
+  // Return public URL via custom domain
+  return `https://released.strollcast.com/${key}`;
 }
 
 /**
@@ -421,5 +421,5 @@ export async function uploadTranscript(
     httpMetadata: { contentType: "text/vtt" },
   });
 
-  return `https://pub-f40a64196d5c4a46bd8d57e962549ede.r2.dev/${key}`;
+  return `https://released.strollcast.com/${key}`;
 }
