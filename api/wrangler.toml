@@ -28,3 +28,4 @@ bucket_name = "strollcast-output"
 # Secrets (set via wrangler secret put):
 # - ANTHROPIC_API_KEY: For transcript generation via Claude API
 # - ELEVENLABS_API_KEY: For audio generation via ElevenLabs API
+# - API_KEY: For authenticating POST /jobs requests (Bearer token)

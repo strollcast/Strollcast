@@ -8,6 +8,7 @@ export interface Env {
   // API keys
   ANTHROPIC_API_KEY: string;
   ELEVENLABS_API_KEY: string;
+  API_KEY: string; // For authenticating POST /jobs requests
 }
 
 // ---------- Episode Types ----------
@@ -203,8 +204,19 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
 
   // ===== Job Endpoints =====
 
-  // POST /jobs - Create a new job
+  // POST /jobs - Create a new job (requires authentication)
   if (path === "/jobs" && request.method === "POST") {
+    // Verify API key
+    const authHeader = request.headers.get("Authorization");
+    const apiKey = authHeader?.replace("Bearer ", "");
+
+    if (!apiKey || apiKey !== env.API_KEY) {
+      return Response.json(
+        { error: "Unauthorized" },
+        { status: 401, headers: corsHeaders }
+      );
+    }
+
     try {
       const body = (await request.json()) as { arxiv_url?: string };
       const arxivUrl = body.arxiv_url;
