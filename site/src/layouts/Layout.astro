@@ -41,6 +41,7 @@ const session = await getSession(Astro);
     </main>
     <footer>
       <p>Knowledge is best absorbed in motion.</p>
+      <p class="footer-links"><a href="/terms">Terms of Service</a></p>
     </footer>
   </body>
 </html>
@@ -176,6 +177,20 @@ const session = await getSession(Astro);
     text-align: center;
     color: var(--text-secondary);
     font-style: italic;
+  }
+
+  .footer-links {
+    margin-top: 0.5rem;
+    font-style: normal;
+    font-size: 0.875rem;
+  }
+
+  .footer-links a {
+    color: var(--text-secondary);
+  }
+
+  .footer-links a:hover {
+    color: var(--text-primary);
   }
 
   h1 {
