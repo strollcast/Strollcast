@@ -53,7 +53,7 @@ director/
 
 ## Tech Stack
 
-- **Frontend:** Astro 5 with SSR, Auth.js (Google + GitHub OAuth)
+- **Frontend:** Astro 5 with SSR, Auth.js (GitHub OAuth)
 - **Hosting:** Cloudflare Pages (site), Cloudflare Workers (API)
 - **Database:** Cloudflare D1
 - **Storage:** Cloudflare R2 (audio files, caching)
@@ -93,8 +93,6 @@ Set in Cloudflare Dashboard > Pages > Settings > Environment variables:
 - `AUTH_TRUST_HOST` - Set to `true`
 - `GITHUB_CLIENT_ID` - From GitHub OAuth app
 - `GITHUB_CLIENT_SECRET` - From GitHub OAuth app
-- `GOOGLE_CLIENT_ID` - From Google Cloud Console
-- `GOOGLE_CLIENT_SECRET` - From Google Cloud Console
 
 ### Required Worker Secrets
 
