@@ -60,6 +60,7 @@ interface Job {
   abstract: string | null;
   episode_id: string | null;
   script_url: string | null;
+  submitted_by: string | null;
   created_at: string;
   updated_at: string;
   completed_at: string | null;
@@ -84,6 +85,7 @@ function toJobResponse(job: Job) {
     abstract: job.abstract,
     episodeId: job.episode_id,
     scriptUrl: job.script_url,
+    submittedBy: job.submitted_by,
     createdAt: job.created_at,
     updatedAt: job.updated_at,
     completedAt: job.completed_at,
@@ -218,8 +220,9 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
     }
 
     try {
-      const body = (await request.json()) as { arxiv_url?: string };
+      const body = (await request.json()) as { arxiv_url?: string; submitted_by?: string };
       const arxivUrl = body.arxiv_url;
+      const submittedBy = body.submitted_by || null;
 
       if (!arxivUrl) {
         return Response.json(
@@ -277,8 +280,8 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
       const jobId = generateUUID();
       try {
         await env.DB.prepare(
-          `INSERT INTO jobs (id, arxiv_id, arxiv_url, status, title, authors, year, abstract)
-           VALUES (?, ?, ?, 'pending', ?, ?, ?, ?)`
+          `INSERT INTO jobs (id, arxiv_id, arxiv_url, status, title, authors, year, abstract, submitted_by)
+           VALUES (?, ?, ?, 'pending', ?, ?, ?, ?, ?)`
         )
           .bind(
             jobId,
@@ -287,7 +290,8 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
             metadata.title,
             metadata.authors,
             metadata.year,
-            metadata.abstract
+            metadata.abstract,
+            submittedBy
           )
           .run();
       } catch (error) {
@@ -341,13 +345,24 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
   if (path === "/jobs" && request.method === "GET") {
     const limit = parseInt(url.searchParams.get("limit") || "20");
     const status = url.searchParams.get("status");
+    const submittedBy = url.searchParams.get("submitted_by");
 
     let query = `SELECT * FROM jobs`;
+    const conditions: string[] = [];
     const params: string[] = [];
 
     if (status) {
-      query += ` WHERE status = ?`;
+      conditions.push(`status = ?`);
       params.push(status);
+    }
+
+    if (submittedBy) {
+      conditions.push(`submitted_by = ?`);
+      params.push(submittedBy);
+    }
+
+    if (conditions.length > 0) {
+      query += ` WHERE ${conditions.join(' AND ')}`;
     }
 
     query += ` ORDER BY created_at DESC LIMIT ?`;

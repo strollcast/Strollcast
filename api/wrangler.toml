@@ -25,6 +25,13 @@ dead_letter_queue = "strollcast-jobs-dlq"
 binding = "R2"
 bucket_name = "strollcast-output"
 
+[observability]
+[observability.logs]
+enabled = true
+head_sampling_rate = 1
+invocation_logs = true
+persist = true
+
 # Secrets (set via wrangler secret put):
 # - ANTHROPIC_API_KEY: For transcript generation via Claude API
 # - ELEVENLABS_API_KEY: For audio generation via ElevenLabs API

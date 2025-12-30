@@ -28,9 +28,17 @@ const session = await getSession(Astro);
           {session ? (
             <>
               <a href="/submit" class="btn-submit-nav">Submit Paper</a>
-              <div class="user-menu">
-                <span class="user-name">{session.user?.name || session.user?.email}</span>
-                <a href="/api/auth/signout" class="btn-signout">Sign Out</a>
+              <div class="user-dropdown">
+                <button class="user-dropdown-trigger">
+                  {session.user?.name || session.user?.email}
+                  <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor">
+                    <path d="M2.5 4.5L6 8L9.5 4.5" stroke="currentColor" stroke-width="1.5" fill="none"/>
+                  </svg>
+                </button>
+                <div class="user-dropdown-menu">
+                  <a href="/jobs">My Jobs</a>
+                  <a href="/api/auth/signout">Sign Out</a>
+                </div>
               </div>
             </>
           ) : (
@@ -132,15 +140,72 @@ const session = await getSession(Astro);
     color: var(--text-primary);
   }
 
-  .user-menu {
-    display: flex;
-    align-items: center;
-    gap: 1rem;
+  .user-dropdown {
+    position: relative;
   }
 
-  .user-name {
+  .user-dropdown-trigger {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    background: none;
+    border: none;
     color: var(--text-secondary);
     font-size: 0.875rem;
+    font-family: inherit;
+    cursor: pointer;
+    padding: 0.5rem;
+    border-radius: 6px;
+    transition: all 0.2s;
+  }
+
+  .user-dropdown-trigger:hover {
+    color: var(--text-primary);
+    background: var(--bg-card);
+  }
+
+  .user-dropdown-menu {
+    position: absolute;
+    top: 100%;
+    right: 0;
+    margin-top: 0.5rem;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    min-width: 150px;
+    opacity: 0;
+    visibility: hidden;
+    transform: translateY(-10px);
+    transition: all 0.2s;
+    z-index: 200;
+  }
+
+  .user-dropdown:hover .user-dropdown-menu,
+  .user-dropdown:focus-within .user-dropdown-menu {
+    opacity: 1;
+    visibility: visible;
+    transform: translateY(0);
+  }
+
+  .user-dropdown-menu a {
+    display: block;
+    padding: 0.75rem 1rem;
+    color: var(--text-secondary);
+    text-decoration: none;
+    transition: all 0.2s;
+  }
+
+  .user-dropdown-menu a:hover {
+    color: var(--text-primary);
+    background: var(--bg-secondary);
+  }
+
+  .user-dropdown-menu a:first-child {
+    border-radius: 8px 8px 0 0;
+  }
+
+  .user-dropdown-menu a:last-child {
+    border-radius: 0 0 8px 8px;
   }
 
   .btn-submit-nav {
@@ -167,15 +232,6 @@ const session = await getSession(Astro);
 
   .btn-signin:hover {
     background: var(--bg-secondary);
-    color: var(--text-primary) !important;
-  }
-
-  .btn-signout {
-    color: var(--text-secondary) !important;
-    font-size: 0.875rem;
-  }
-
-  .btn-signout:hover {
     color: var(--text-primary) !important;
   }
 
@@ -270,9 +326,9 @@ const session = await getSession(Astro);
       font-size: 2rem;
     }
 
-    .user-menu {
-      flex-direction: column;
-      gap: 0.25rem;
+    .user-dropdown-menu {
+      right: auto;
+      left: 0;
     }
   }
 </style>

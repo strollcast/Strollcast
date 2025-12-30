@@ -1,0 +1,286 @@
+---
+import Layout from '../layouts/Layout.astro';
+import { getSession } from '../lib/auth';
+
+const session = await getSession(Astro);
+
+// Redirect to login if not authenticated
+if (!session) {
+  return Astro.redirect('/login?redirect=/jobs');
+}
+---
+
+<Layout title="My Jobs">
+  <div class="jobs-container">
+    <div class="jobs-header">
+      <h1>My Submissions</h1>
+      <a href="/submit" class="btn btn-primary">Submit New Paper</a>
+    </div>
+
+    <div id="jobs-list" class="jobs-list">
+      <div class="loading">Loading your jobs...</div>
+    </div>
+  </div>
+</Layout>
+
+<script>
+  interface Job {
+    jobId: string;
+    arxivId: string;
+    arxivUrl: string;
+    status: string;
+    errorMessage: string | null;
+    title: string | null;
+    authors: string | null;
+    year: number | null;
+    episodeId: string | null;
+    createdAt: string;
+    updatedAt: string;
+    completedAt: string | null;
+  }
+
+  async function loadJobs() {
+    const jobsList = document.getElementById('jobs-list') as HTMLElement;
+
+    try {
+      const response = await fetch('/api/jobs');
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to load jobs');
+      }
+
+      const jobs: Job[] = data.jobs || [];
+
+      if (jobs.length === 0) {
+        jobsList.innerHTML = `
+          <div class="empty-state">
+            <p>You haven't submitted any papers yet.</p>
+            <a href="/submit" class="btn btn-primary">Submit Your First Paper</a>
+          </div>
+        `;
+        return;
+      }
+
+      jobsList.innerHTML = jobs.map(job => `
+        <div class="job-card" data-status="${job.status}">
+          <div class="job-header">
+            <span class="status-badge status-${job.status}">${formatStatus(job.status)}</span>
+            <span class="job-date">${formatDate(job.createdAt)}</span>
+          </div>
+          <h3 class="job-title">${job.title || 'Loading...'}</h3>
+          <p class="job-authors">${job.authors || ''}</p>
+          <div class="job-footer">
+            <a href="${job.arxivUrl}" target="_blank" rel="noopener" class="job-link">
+              arXiv:${job.arxivId}
+            </a>
+            ${job.status === 'completed' && job.episodeId ? `
+              <a href="/" class="btn btn-small">Listen</a>
+            ` : ''}
+            ${job.status === 'failed' ? `
+              <span class="error-message" title="${job.errorMessage || 'Unknown error'}">
+                Error: ${truncate(job.errorMessage || 'Unknown error', 50)}
+              </span>
+            ` : ''}
+          </div>
+        </div>
+      `).join('');
+
+    } catch (error) {
+      jobsList.innerHTML = `
+        <div class="error-state">
+          <p>Failed to load jobs: ${error instanceof Error ? error.message : 'Unknown error'}</p>
+          <button onclick="loadJobs()" class="btn btn-secondary">Retry</button>
+        </div>
+      `;
+    }
+  }
+
+  function formatStatus(status: string): string {
+    const statusMap: Record<string, string> = {
+      'pending': 'Pending',
+      'generating_transcript': 'Generating Script',
+      'generating_audio': 'Generating Audio',
+      'completed': 'Completed',
+      'failed': 'Failed',
+    };
+    return statusMap[status] || status;
+  }
+
+  function formatDate(dateString: string): string {
+    const date = new Date(dateString);
+    return date.toLocaleDateString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  }
+
+  function truncate(str: string, length: number): string {
+    return str.length > length ? str.substring(0, length) + '...' : str;
+  }
+
+  // Make loadJobs available globally for retry button
+  (window as any).loadJobs = loadJobs;
+
+  // Initial load
+  loadJobs();
+
+  // Auto-refresh every 30 seconds for pending jobs
+  setInterval(() => {
+    const hasPendingJobs = document.querySelector('[data-status="pending"], [data-status="generating_transcript"], [data-status="generating_audio"]');
+    if (hasPendingJobs) {
+      loadJobs();
+    }
+  }, 30000);
+</script>
+
+<style>
+  .jobs-container {
+    max-width: 800px;
+    margin: 0 auto;
+  }
+
+  .jobs-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 2rem;
+  }
+
+  .jobs-header h1 {
+    margin: 0;
+  }
+
+  .btn {
+    display: inline-block;
+    padding: 0.5rem 1rem;
+    border-radius: 6px;
+    font-weight: 500;
+    text-decoration: none;
+    cursor: pointer;
+    border: none;
+    font-size: 0.875rem;
+  }
+
+  .btn-primary {
+    background: var(--accent);
+    color: white;
+  }
+
+  .btn-primary:hover {
+    background: var(--accent-hover);
+    color: white;
+  }
+
+  .btn-secondary {
+    background: var(--bg-card);
+    color: var(--text-primary);
+    border: 1px solid var(--border);
+  }
+
+  .btn-small {
+    padding: 0.25rem 0.75rem;
+    font-size: 0.75rem;
+  }
+
+  .jobs-list {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+  }
+
+  .loading, .empty-state, .error-state {
+    text-align: center;
+    padding: 3rem;
+    color: var(--text-secondary);
+  }
+
+  .empty-state .btn, .error-state .btn {
+    margin-top: 1rem;
+  }
+
+  .job-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 1.25rem;
+  }
+
+  .job-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.75rem;
+  }
+
+  .status-badge {
+    display: inline-block;
+    padding: 0.25rem 0.5rem;
+    border-radius: 4px;
+    font-size: 0.75rem;
+    font-weight: 500;
+  }
+
+  .status-pending {
+    background: rgba(234, 179, 8, 0.2);
+    color: #eab308;
+  }
+
+  .status-generating_transcript,
+  .status-generating_audio {
+    background: rgba(59, 130, 246, 0.2);
+    color: #3b82f6;
+  }
+
+  .status-completed {
+    background: rgba(34, 197, 94, 0.2);
+    color: #22c55e;
+  }
+
+  .status-failed {
+    background: rgba(239, 68, 68, 0.2);
+    color: #ef4444;
+  }
+
+  .job-date {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+  }
+
+  .job-title {
+    margin: 0 0 0.25rem 0;
+    font-size: 1rem;
+    color: var(--text-primary);
+  }
+
+  .job-authors {
+    margin: 0 0 0.75rem 0;
+    font-size: 0.875rem;
+    color: var(--text-secondary);
+  }
+
+  .job-footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+
+  .job-link {
+    font-size: 0.75rem;
+    color: var(--accent);
+  }
+
+  .error-message {
+    font-size: 0.75rem;
+    color: #ef4444;
+    max-width: 300px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+</style>
