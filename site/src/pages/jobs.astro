@@ -78,9 +78,9 @@ if (!session) {
               <a href="/" class="btn btn-small">Listen</a>
             ` : ''}
             ${job.status === 'failed' ? `
-              <span class="error-message" title="${job.errorMessage || 'Unknown error'}">
-                Error: ${truncate(job.errorMessage || 'Unknown error', 50)}
-              </span>
+              <div class="error-message">
+                <strong>Error:</strong> ${job.errorMessage || 'Unknown error'}
+              </div>
             ` : ''}
           </div>
         </div>
@@ -116,10 +116,6 @@ if (!session) {
       hour: '2-digit',
       minute: '2-digit',
     });
-  }
-
-  function truncate(str: string, length: number): string {
-    return str.length > length ? str.substring(0, length) + '...' : str;
   }
 
   // Make loadJobs available globally for retry button
@@ -278,9 +274,11 @@ if (!session) {
   .error-message {
     font-size: 0.75rem;
     color: #ef4444;
-    max-width: 300px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    margin-top: 0.75rem;
+    padding: 0.5rem;
+    background: rgba(239, 68, 68, 0.1);
+    border-radius: 4px;
+    width: 100%;
+    word-break: break-word;
   }
 </style>
