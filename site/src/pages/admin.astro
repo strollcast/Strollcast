@@ -63,6 +63,11 @@ if (username !== ADMIN_GITHUB_USERNAME) {
     });
   }
 
+  function truncateTitle(title: string, maxLen: number = 60): string {
+    if (title.length <= maxLen) return title;
+    return title.slice(0, 50) + '...' + title.slice(-10);
+  }
+
   async function loadEpisodes() {
     const list = document.getElementById('episodes-list') as HTMLElement;
 
@@ -101,7 +106,7 @@ if (username !== ADMIN_GITHUB_USERNAME) {
               <tr data-id="${ep.id}">
                 <td class="col-title">
                   <div class="title-cell">
-                    <span class="ep-title">${ep.title}</span>
+                    <span class="ep-title" title="${ep.title}">${truncateTitle(ep.title)}</span>
                     <span class="ep-authors">${ep.authors}</span>
                   </div>
                 </td>
