@@ -101,14 +101,15 @@ if (!session) {
           <h3>Job Already Queued</h3>
           <p>This paper is already being processed. Check back soon!</p>
           <p class="job-status">Status: ${data.job?.status || 'processing'}</p>
+          <a href="/jobs" class="btn btn-secondary">View My Jobs</a>
         `;
       } else {
         resultDiv.innerHTML = `
           <h3>Job Submitted!</h3>
           <p><strong>${data.title || 'Paper'}</strong></p>
           <p>Your podcast is being generated. This typically takes 5-10 minutes.</p>
-          <p class="job-status">Job ID: ${data.jobId}</p>
-          <a href="/" class="btn btn-secondary">View Episodes</a>
+          <p class="job-status"><a href="/jobs" class="job-link">Job ID: ${data.jobId}</a></p>
+          <a href="/jobs" class="btn btn-secondary">View My Jobs</a>
         `;
       }
       resultDiv.style.display = 'block';
@@ -256,6 +257,15 @@ if (!session) {
     font-size: 0.875rem;
     color: var(--text-secondary);
     font-family: monospace;
+  }
+
+  .job-status .job-link {
+    color: var(--accent);
+    text-decoration: none;
+  }
+
+  .job-status .job-link:hover {
+    text-decoration: underline;
   }
 
   .error {
