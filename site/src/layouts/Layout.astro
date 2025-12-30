@@ -30,7 +30,7 @@ const session = await getSession(Astro);
               <a href="/submit" class="btn-submit-nav">Submit Paper</a>
               <div class="user-dropdown">
                 <button class="user-dropdown-trigger">
-                  {session.user?.name || session.user?.email}
+                  {(session.user as any)?.username || session.user?.name || session.user?.email}
                   <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor">
                     <path d="M2.5 4.5L6 8L9.5 4.5" stroke="currentColor" stroke-width="1.5" fill="none"/>
                   </svg>
