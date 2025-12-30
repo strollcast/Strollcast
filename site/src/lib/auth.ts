@@ -1,9 +1,11 @@
 import { Auth } from '@auth/core';
 import GitHub from '@auth/core/providers/github';
 import type { AuthConfig } from '@auth/core';
-import type { AstroGlobal } from 'astro';
+import type { AstroGlobal, APIContext } from 'astro';
 
-export async function getSession(astro: AstroGlobal) {
+export const ADMIN_GITHUB_USERNAME = 'winding-lines';
+
+export async function getSession(astro: AstroGlobal | APIContext) {
   const runtime = (astro.locals as any).runtime;
   const env = runtime?.env || {};
 
@@ -18,9 +20,17 @@ export async function getSession(astro: AstroGlobal) {
       }),
     ],
     callbacks: {
+      async jwt({ token, profile }) {
+        // Store GitHub username from profile on initial sign-in
+        if (profile) {
+          token.username = (profile as any).login;
+        }
+        return token;
+      },
       async session({ session, token }) {
         if (session.user && token.sub) {
           session.user.id = token.sub;
+          (session.user as any).username = token.username;
         }
         return session;
       },

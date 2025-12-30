@@ -396,6 +396,198 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
     return Response.json(toJobResponse(job), { headers: corsHeaders });
   }
 
+  // ===== Admin Endpoints =====
+
+  // GET /admin/episodes - List all episodes with file metadata
+  if (path === "/admin/episodes" && request.method === "GET") {
+    // Verify API key
+    const authHeader = request.headers.get("Authorization");
+    const apiKey = authHeader?.replace("Bearer ", "");
+
+    if (!apiKey || apiKey !== env.API_KEY) {
+      return Response.json(
+        { error: "Unauthorized" },
+        { status: 401, headers: corsHeaders }
+      );
+    }
+
+    const { results } = await env.DB.prepare(
+      `SELECT * FROM episodes ORDER BY year DESC, created_at DESC`
+    ).all<Episode>();
+
+    // Get file metadata from R2 for each episode
+    const episodesWithMeta = await Promise.all(
+      results.map(async (episode) => {
+        const baseResponse = toApiResponse(episode);
+
+        // Parse episode ID from audio URL to get R2 path
+        // Audio URL: https://released.strollcast.com/episodes/{id}/{id}.mp3
+        const audioPath = episode.audio_url.replace("https://released.strollcast.com/", "");
+        const transcriptPath = episode.transcript_url?.replace("https://released.strollcast.com/", "");
+
+        let audioSize: number | null = null;
+        let audioUpdated: string | null = null;
+        let transcriptSize: number | null = null;
+        let transcriptUpdated: string | null = null;
+
+        try {
+          const audioHead = await env.R2.head(audioPath);
+          if (audioHead) {
+            audioSize = audioHead.size;
+            audioUpdated = audioHead.uploaded.toISOString();
+          }
+        } catch {
+          // File not found or error
+        }
+
+        if (transcriptPath) {
+          try {
+            const transcriptHead = await env.R2.head(transcriptPath);
+            if (transcriptHead) {
+              transcriptSize = transcriptHead.size;
+              transcriptUpdated = transcriptHead.uploaded.toISOString();
+            }
+          } catch {
+            // File not found or error
+          }
+        }
+
+        return {
+          ...baseResponse,
+          audioSize,
+          audioUpdated,
+          transcriptSize,
+          transcriptUpdated,
+        };
+      })
+    );
+
+    return Response.json(
+      { episodes: episodesWithMeta },
+      { headers: corsHeaders }
+    );
+  }
+
+  // POST /admin/episodes/:id/regenerate-audio - Regenerate audio for an episode
+  const regenerateMatch = path.match(/^\/admin\/episodes\/([^/]+)\/regenerate-audio$/);
+  if (regenerateMatch && request.method === "POST") {
+    // Verify API key
+    const authHeader = request.headers.get("Authorization");
+    const apiKey = authHeader?.replace("Bearer ", "");
+
+    if (!apiKey || apiKey !== env.API_KEY) {
+      return Response.json(
+        { error: "Unauthorized" },
+        { status: 401, headers: corsHeaders }
+      );
+    }
+
+    const episodeId = regenerateMatch[1];
+
+    // Get episode from database
+    const episode = await env.DB.prepare(
+      `SELECT * FROM episodes WHERE id = ?`
+    )
+      .bind(episodeId)
+      .first<Episode>();
+
+    if (!episode) {
+      return Response.json(
+        { error: "Episode not found" },
+        { status: 404, headers: corsHeaders }
+      );
+    }
+
+    // Create a regeneration job
+    const jobId = generateUUID();
+
+    // Extract arXiv ID from paper URL
+    const arxivMatch = episode.paper_url?.match(/arxiv\.org\/(?:abs|pdf)\/(\d+\.\d+)/);
+    const arxivId = arxivMatch ? arxivMatch[1] : episodeId;
+
+    await env.DB.prepare(
+      `INSERT INTO jobs (id, arxiv_id, arxiv_url, status, title, authors, year, abstract, episode_id, submitted_by)
+       VALUES (?, ?, ?, 'pending', ?, ?, ?, ?, ?, 'admin-regenerate')`
+    )
+      .bind(
+        jobId,
+        arxivId,
+        episode.paper_url || "",
+        episode.title,
+        episode.authors,
+        episode.year,
+        episode.description,
+        episodeId
+      )
+      .run();
+
+    // For regeneration, we need to get the existing script from R2
+    // Look for the script in the episode folder or create from transcript
+    // For now, queue directly to audio generation stage
+    // First copy existing script to active folder if we can find it
+
+    // Try to find existing script in R2
+    const possibleScriptPaths = [
+      `episodes/${episodeId}/script.md`,
+      `scripts/${episodeId}.md`,
+    ];
+
+    let scriptContent: string | null = null;
+    for (const scriptPath of possibleScriptPaths) {
+      try {
+        const scriptObject = await env.R2.get(scriptPath);
+        if (scriptObject) {
+          scriptContent = await scriptObject.text();
+          break;
+        }
+      } catch {
+        // Continue to next path
+      }
+    }
+
+    if (!scriptContent) {
+      // No existing script found - need to regenerate from transcript
+      await env.DB.prepare(
+        `UPDATE jobs SET status = 'failed', error_message = 'No script found for episode. Full regeneration required.', updated_at = datetime('now') WHERE id = ?`
+      )
+        .bind(jobId)
+        .run();
+
+      return Response.json(
+        { error: "No script found for episode. Full regeneration required." },
+        { status: 400, headers: corsHeaders }
+      );
+    }
+
+    // Save script to active folder
+    const activeScriptKey = `active/${jobId}/script.md`;
+    await env.R2.put(activeScriptKey, scriptContent);
+
+    // Update job with script URL
+    const scriptUrl = `https://pub-strollcast.r2.dev/${activeScriptKey}`;
+    await env.DB.prepare(
+      `UPDATE jobs SET script_url = ?, updated_at = datetime('now') WHERE id = ?`
+    )
+      .bind(scriptUrl, jobId)
+      .run();
+
+    // Queue directly to audio generation stage (skip transcript generation)
+    await env.JOBS_QUEUE.send({
+      job_id: jobId,
+      stage: "generate_audio",
+      attempt: 1,
+    } as QueueMessage);
+
+    return Response.json(
+      {
+        message: "Audio regeneration queued",
+        jobId,
+        episodeId,
+      },
+      { status: 202, headers: corsHeaders }
+    );
+  }
+
   return Response.json(
     { error: "Not found" },
     { status: 404, headers: corsHeaders }
