@@ -198,8 +198,9 @@ export function computeCacheKey(text: string, voiceId: string, provider: TTSProv
     hash = (hash << 5) - hash + char;
     hash = hash & hash;
   }
-  var truncated = text.slice(0, 20) + "_" + text.slice(-10)
-  return String(version) + "/" + truncated.slice(2) + "/" + Math.abs(hash).toString(16).padStart(8, "0") + "_" + provider + "_" + truncated.replace(/[^a-zA-Z0-9]/g, "");
+  var truncated = text.slice(0, 20) + "_" + text.slice(-10);
+  truncated = truncated.replace(/[^a-zA-Z0-9]/g, "");
+  return String(version) + "/" + truncated.slice(0, 2) + "/" + Math.abs(hash).toString(16).padStart(8, "0") + "_" + provider + "_" + truncated;
 }
 
 /**
@@ -507,7 +508,7 @@ export async function getCachedSegment(
   cacheKey: string
 ): Promise<CachedSegment | null> {
   try {
-    const object = await r2Cache.get(`segments/${cacheKey}.mp3`);
+    const object = await r2Cache.get(`tts_cache/${cacheKey}.mp3`);
     if (object) {
       // Skip legacy cached segments without duration metadata
       if (!object.customMetadata?.duration) {
