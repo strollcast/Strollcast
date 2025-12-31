@@ -109,33 +109,6 @@ export function parseScript(scriptContent: string): Segment[] {
 function computeCacheKey(text: string, voiceId: string, provider: TTSProvider): string {
   const modelId = provider === "elevenlabs" ? ELEVENLABS_MODEL_ID : INWORLD_MODEL;
 
-  // ElevenLabs: maintain backwards compatibility with existing cache
-  if (provider === "elevenlabs") {
-    const cacheData = JSON.stringify(
-      {
-        text,
-        voice_id: voiceId,
-        model_id: modelId,
-        version: "2",
-      },
-      Object.keys({
-        text,
-        voice_id: voiceId,
-        model_id: modelId,
-        version: "2",
-      }).sort()
-    );
-
-    let hash = 0;
-    for (let i = 0; i < cacheData.length; i++) {
-      const char = cacheData.charCodeAt(i);
-      hash = (hash << 5) - hash + char;
-      hash = hash & hash;
-    }
-    return Math.abs(hash).toString(16).padStart(8, "0") + "_" + text.slice(0, 20).replace(/[^a-zA-Z0-9]/g, "");
-  }
-
-  // Inworld: new format with provider
   const cacheData = JSON.stringify(
     {
       text,
@@ -386,17 +359,33 @@ function generateWebVtt(segments: TimingInfo[]): string {
 }
 
 /**
- * Check R2 cache for a segment.
+ * Cached segment with audio data and duration.
  */
-async function getCachedSegment(
+export interface CachedSegment {
+  audio: Uint8Array;
+  duration: number;
+}
+
+/**
+ * Check R2 cache for a segment.
+ * Returns audio data and duration from customMetadata.
+ * Returns null if segment is missing or lacks duration metadata (legacy cache).
+ */
+export async function getCachedSegment(
   r2Cache: R2Bucket,
   cacheKey: string
-): Promise<Uint8Array | null> {
+): Promise<CachedSegment | null> {
   try {
     const object = await r2Cache.get(`segments/${cacheKey}.mp3`);
     if (object) {
+      // Skip legacy cached segments without duration metadata
+      if (!object.customMetadata?.duration) {
+        return null;
+      }
       const arrayBuffer = await object.arrayBuffer();
-      return new Uint8Array(arrayBuffer);
+      const audio = new Uint8Array(arrayBuffer);
+      const duration = parseFloat(object.customMetadata.duration);
+      return { audio, duration };
     }
   } catch {
     // Cache miss or error
@@ -405,16 +394,18 @@ async function getCachedSegment(
 }
 
 /**
- * Save segment to R2 cache.
+ * Save segment to R2 cache with duration in customMetadata.
  */
-async function saveCachedSegment(
+export async function saveCachedSegment(
   r2Cache: R2Bucket,
   cacheKey: string,
-  audio: Uint8Array
+  audio: Uint8Array,
+  duration: number
 ): Promise<void> {
   try {
     await r2Cache.put(`segments/${cacheKey}.mp3`, audio, {
       httpMetadata: { contentType: "audio/mpeg" },
+      customMetadata: { duration: duration.toString() },
     });
   } catch (error) {
     console.error("Failed to cache segment:", error);
@@ -482,14 +473,14 @@ export async function generateEpisode(
       const nextSegment = speechIndex < speechSegments.length - 1 ? speechSegments[speechIndex + 1] : null;
 
       // Check cache
-      let audio = await getCachedSegment(r2Cache, cacheKey);
+      const cached = await getCachedSegment(r2Cache, cacheKey);
+      let audio: Uint8Array;
       let duration: number;
 
-      if (audio) {
+      if (cached) {
         cacheHits++;
-        // Estimate duration from file size (rough: ~16kbps for speech MP3)
-        // More accurate would be to store duration in cache metadata
-        duration = audio.length / 2000; // Rough estimate
+        audio = cached.audio;
+        duration = cached.duration;
       } else {
         // Generate via selected provider
         let result: { audio: Uint8Array; duration: number };
@@ -517,8 +508,8 @@ export async function generateEpisode(
         duration = result.duration;
         apiCalls++;
 
-        // Cache the segment
-        await saveCachedSegment(r2Cache, cacheKey, audio);
+        // Cache the segment with duration in metadata
+        await saveCachedSegment(r2Cache, cacheKey, audio, duration);
       }
 
       // Track cache key for container
