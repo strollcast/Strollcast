@@ -5,6 +5,8 @@
  * Runs directly in Cloudflare Worker without Modal/ffmpeg dependency.
  */
 
+import { TagLib } from "taglib-wasm";
+
 // TTS Provider types
 export type TTSProvider = "elevenlabs" | "inworld";
 
@@ -83,7 +85,8 @@ export function parseScript(scriptContent: string): Segment[] {
       text = text.replace(/\{\{[^}]+\}\}/g, ""); // Remove {{...}}
       text = text.replace(/\*\*\[[^\]]*\]\*\*/g, ""); // Remove **[...]**
       text = text.replace(/\[[^\]]*\]/g, ""); // Remove [...]
-      text = text.replace(/\*\*/g, "").replace(/\*/g, "").trim();
+      text = text.replace(/\*\*/g, "").replace(/\*/g, "");
+      text = text.replace(/\s+/g, " ").trim(); // Collapse multiple spaces
 
       if (text && (speaker === "ERIC" || speaker === "MAYA")) {
         segments.push({ speaker, text });
@@ -296,6 +299,64 @@ function formatVttTimestamp(seconds: number): string {
   return `${hours.toString().padStart(2, "0")}:${minutes.toString().padStart(2, "0")}:${secs.toFixed(3).padStart(6, "0")}`;
 }
 
+// Singleton TagLib instance for reuse
+let taglibInstance: TagLib | null = null;
+
+async function getTagLib(): Promise<TagLib> {
+  if (!taglibInstance) {
+    taglibInstance = await TagLib.initialize();
+  }
+  return taglibInstance;
+}
+
+/**
+ * Fix MP3 metadata after concatenation using taglib-wasm.
+ * This ensures the duration is correctly reported by audio players.
+ */
+export async function fixMp3Metadata(
+  audioData: Uint8Array,
+  title: string,
+  artist: string
+): Promise<{ audioData: Uint8Array; durationSeconds: number }> {
+  try {
+    const taglib = await getTagLib();
+    const audioFile = await taglib.open(audioData);
+
+    // Read the actual duration from the audio data
+    const props = audioFile.audioProperties();
+    const durationSeconds = props?.length ?? 0;
+
+    // Set proper ID3 tags
+    const tag = audioFile.tag();
+    if (tag) {
+      tag.setTitle(title);
+      tag.setArtist(artist);
+      tag.setAlbum("Strollcast");
+      tag.setGenre("Podcast");
+      tag.setComment(`Duration: ${Math.floor(durationSeconds / 60)}:${Math.floor(durationSeconds % 60).toString().padStart(2, "0")}`);
+    }
+
+    // Save and get the modified buffer
+    audioFile.save();
+    const modifiedBuffer = audioFile.getFileBuffer();
+    audioFile.dispose();
+
+    console.log(`TagLib: Fixed MP3 metadata, duration: ${durationSeconds}s`);
+
+    return {
+      audioData: modifiedBuffer,
+      durationSeconds,
+    };
+  } catch (error) {
+    console.error("TagLib error, returning original audio:", error);
+    // Return original audio if taglib fails
+    return {
+      audioData,
+      durationSeconds: 0,
+    };
+  }
+}
+
 /**
  * Generate WebVTT transcript content.
  */
@@ -482,13 +543,23 @@ export async function generateEpisode(
     offset += chunk.length;
   }
 
+  // Fix MP3 metadata using taglib-wasm to ensure correct duration display
+  const { audioData: fixedAudio, durationSeconds: taglibDuration } = await fixMp3Metadata(
+    concatenatedAudio,
+    episodeName,
+    "Strollcast"
+  );
+
+  // Use taglib duration if available, otherwise use calculated time
+  const finalDuration = taglibDuration > 0 ? taglibDuration : currentTime;
+
   // Generate VTT
   const vttContent = generateWebVtt(timingInfo);
 
   return {
-    audioData: concatenatedAudio,
+    audioData: fixedAudio,
     vttContent,
-    durationSeconds: currentTime,
+    durationSeconds: finalDuration,
     segmentCount: segments.filter((s) => s.speaker !== "PAUSE").length,
     cacheHits,
     apiCalls,
