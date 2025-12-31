@@ -351,17 +351,21 @@ if (username !== ADMIN_GITHUB_USERNAME) {
     align-items: center;
     justify-content: space-between;
     gap: 0.75rem;
+    min-height: 44px;
   }
 
   .file-info {
     display: flex;
     flex-direction: column;
     gap: 0.125rem;
+    flex: 1;
+    min-width: 0;
   }
 
   .audio-actions {
     display: flex;
     gap: 0.25rem;
+    flex-shrink: 0;
   }
 
   .file-size {
@@ -376,8 +380,8 @@ if (username !== ADMIN_GITHUB_USERNAME) {
   }
 
   .icon-btn {
-    padding: 0.5rem;
-    border-radius: 4px;
+    padding: 0.625rem;
+    border-radius: 6px;
     cursor: pointer;
     border: none;
     transition: all 0.2s;
@@ -385,11 +389,13 @@ if (username !== ADMIN_GITHUB_USERNAME) {
     align-items: center;
     justify-content: center;
     background: transparent;
+    min-width: 36px;
+    min-height: 36px;
   }
 
   .icon-btn svg {
-    width: 16px;
-    height: 16px;
+    width: 18px;
+    height: 18px;
   }
 
   .icon-btn.btn-generate {
