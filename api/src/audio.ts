@@ -669,7 +669,7 @@ export async function generateEpisode(
   console.log(`Generating presigned URLs for ${segmentCacheKeys.length} segments...`);
   const segmentUrls = await Promise.all(
     segmentCacheKeys.map((key) =>
-      generatePresignedUrl(r2Credentials, "strollcast-cache", `segments/${key}.mp3`, "GET")
+      generatePresignedUrl(r2Credentials, "strollcast-cache", `${TTS_CACHE_BASE}/${key}.mp3`, "GET")
     )
   );
 
