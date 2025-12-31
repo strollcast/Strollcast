@@ -38,10 +38,10 @@ invocation_logs = true
 persist = true
 
 # FFmpeg container for MP3 concatenation
-# Image is pre-built and pushed to GHCR by GitHub Actions
+# Built by Cloudflare from Dockerfile (cached internally)
 [[containers]]
 class_name = "FFmpegContainer"
-image = "ghcr.io/strollcast/director/ffmpeg:latest"
+image = "./container/Dockerfile"
 max_instances = 5
 
 [[durable_objects.bindings]]
