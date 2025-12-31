@@ -1,6 +1,31 @@
 import { generateTranscript } from "./transcript";
 import { generateEpisode, uploadTranscript, type R2Credentials } from "./audio";
 
+// Container class from cloudflare:workers (types not yet in @cloudflare/workers-types)
+// @ts-expect-error Container is a new API, types will be added in future release
+import { Container } from "cloudflare:workers";
+
+/**
+ * FFmpeg Container class for MP3 concatenation.
+ * Runs an Alpine container with FFmpeg for proper audio processing.
+ */
+export class FFmpegContainer extends Container {
+  defaultPort = 8080;
+  sleepAfter = "5m"; // Sleep after 5 minutes of inactivity
+
+  onStart(): void {
+    console.log("FFmpeg container started");
+  }
+
+  onStop(): void {
+    console.log("FFmpeg container stopped");
+  }
+
+  onError(error: unknown): void {
+    console.error("FFmpeg container error:", error);
+  }
+}
+
 export interface Env {
   DB: D1Database;
   JOBS_QUEUE: Queue;
