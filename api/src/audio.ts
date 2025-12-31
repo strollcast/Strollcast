@@ -57,11 +57,11 @@ export function getMp3Duration(audioData: Uint8Array): number {
   // Skip ID3v2 tag if present
   let offset = 0;
   if (audioData.length > 10 &&
-      audioData[0] === 0x49 && audioData[1] === 0x44 && audioData[2] === 0x33) { // "ID3"
+    audioData[0] === 0x49 && audioData[1] === 0x44 && audioData[2] === 0x33) { // "ID3"
     const size = ((audioData[6] & 0x7F) << 21) |
-                 ((audioData[7] & 0x7F) << 14) |
-                 ((audioData[8] & 0x7F) << 7) |
-                 (audioData[9] & 0x7F);
+      ((audioData[7] & 0x7F) << 14) |
+      ((audioData[8] & 0x7F) << 7) |
+      (audioData[9] & 0x7F);
     offset = 10 + size;
   }
 
@@ -93,14 +93,14 @@ const ELEVENLABS_VOICES: Record<string, string> = {
 
 const ELEVENLABS_MODEL_ID = "eleven_turbo_v2_5";
 
-// Inworld voice configuration (via AIML API)
+// Inworld voice configuration
 const INWORLD_VOICES: Record<string, string> = {
   ERIC: "Dennis",
   MAYA: "Sarah",
 };
 
-const INWORLD_API_URL = "https://api.aimlapi.com/v1/tts";
-const INWORLD_MODEL = "inworld/tts-1";
+const INWORLD_API_URL = "https://api.inworld.ai/tts/v1/voice";
+const INWORLD_MODEL_ID = "inworld-tts-1"
 
 interface Segment {
   speaker: string;
@@ -120,16 +120,6 @@ interface ElevenLabsResponse {
     characters: string[];
     character_start_times_seconds: number[];
     character_end_times_seconds: number[];
-  };
-}
-
-interface InworldResponse {
-  audio: {
-    url: string;
-  };
-  metadata: {
-    duration: number;
-    channels: number;
   };
 }
 
@@ -180,11 +170,10 @@ export function parseScript(scriptContent: string): Segment[] {
 
 /**
  * Compute cache key for a segment.
- * ElevenLabs uses the original format (version 2) for backwards compatibility.
- * Inworld uses version 3 with provider in the key.
  */
-function computeCacheKey(text: string, voiceId: string, provider: TTSProvider): string {
-  const modelId = provider === "elevenlabs" ? ELEVENLABS_MODEL_ID : INWORLD_MODEL;
+export function computeCacheKey(text: string, voiceId: string, provider: TTSProvider): string {
+  const modelId = provider === "elevenlabs" ? ELEVENLABS_MODEL_ID : INWORLD_MODEL_ID;
+  const version = 3
 
   const cacheData = JSON.stringify(
     {
@@ -192,14 +181,14 @@ function computeCacheKey(text: string, voiceId: string, provider: TTSProvider): 
       voice_id: voiceId,
       model_id: modelId,
       provider,
-      version: "1",
+      version,
     },
     Object.keys({
       text,
       voice_id: voiceId,
       model_id: modelId,
       provider,
-      version: "1",
+      version,
     }).sort()
   );
 
@@ -209,7 +198,8 @@ function computeCacheKey(text: string, voiceId: string, provider: TTSProvider): 
     hash = (hash << 5) - hash + char;
     hash = hash & hash;
   }
-  return Math.abs(hash).toString(16).padStart(8, "0") + "_" + provider + "_" + text.slice(0, 20).replace(/[^a-zA-Z0-9]/g, "");
+  var truncated = text.slice(0, 20) + "_" + text.slice(-10)
+  return String(version) + "/" + truncated.slice(2) + "/" + Math.abs(hash).toString(16).padStart(8, "0") + "_" + provider + "_" + truncated.replace(/[^a-zA-Z0-9]/g, "");
 }
 
 /**
@@ -293,8 +283,35 @@ async function generateSegmentAudioElevenLabs(
 }
 
 /**
+ * Inworld API response with word-level timestamps.
+ */
+export interface InworldApiResponse {
+  audioContent?: string;  // Base64-encoded audio
+  audio?: { url?: string };  // Alternative: audio URL (AIML API)
+  timestampInfo?: {
+    wordAlignment?: {
+      words: string[];
+      wordStartTimeSeconds: number[];
+      wordEndTimeSeconds: number[];
+    };
+  };
+}
+
+/**
+ * Extract duration from Inworld API response word timestamps.
+ * Returns the end time of the last word.
+ */
+export function getInworldDuration(response: InworldApiResponse): number {
+  const wordEndTimes = response.timestampInfo?.wordAlignment?.wordEndTimeSeconds;
+  if (!wordEndTimes || wordEndTimes.length === 0) {
+    throw new Error(`Response missing word timestamps`);
+  }
+  return wordEndTimes[wordEndTimes.length - 1];
+}
+
+/**
  * Generate audio for a single segment using Inworld TTS (via AIML API).
- * Returns audio bytes and duration.
+ * Returns audio bytes and duration from word-level timestamps.
  */
 async function generateSegmentAudioInworld(
   text: string,
@@ -310,10 +327,14 @@ async function generateSegmentAudioInworld(
       "Authorization": `Bearer ${apiKey}`,
     },
     body: JSON.stringify({
-      model: INWORLD_MODEL,
       text,
-      voice,
-      format: "mp3",
+      voiceId: voice,
+      modelId: INWORLD_MODEL_ID,
+      timestampType: "WORD",
+      applyTextNormalization: "ON",
+      audioConfig: {
+        speakingRate: 0.9,
+      },
     }),
   });
 
@@ -322,27 +343,40 @@ async function generateSegmentAudioInworld(
     throw new Error(`Inworld API error: ${response.status} ${errorText}`);
   }
 
-  const data = await response.json() as { audio?: { url?: string } };
+  const data = await response.json() as InworldApiResponse;
 
-  const audioUrl = data.audio?.url;
-  if (!audioUrl) {
-    throw new Error(`Inworld API response missing audio URL: ${JSON.stringify(data)}`);
+  // Get duration from word-level timestamps
+  let duration: number;
+  try {
+    duration = getInworldDuration(data);
+  } catch {
+    throw new Error(`Inworld API response missing word timestamps: ${JSON.stringify(data)}`);
   }
-
-  // Fetch the audio from the URL
-  const audioResponse = await fetch(audioUrl);
-  if (!audioResponse.ok) {
-    throw new Error(`Failed to fetch Inworld audio: ${audioResponse.status}`);
-  }
-
-  const audioBuffer = await audioResponse.arrayBuffer();
-  const bytes = new Uint8Array(audioBuffer);
-
-  // Get duration from MP3 header parsing
-  const duration = getMp3Duration(bytes);
 
   if (!Number.isFinite(duration) || duration <= 0) {
-    throw new Error(`Failed to parse MP3 duration: ${duration}`);
+    throw new Error(`Invalid duration from timestamps: ${duration}`);
+  }
+
+  // Get audio bytes - handle both base64 audioContent and audio URL
+  let bytes: Uint8Array;
+
+  if (data.audioContent) {
+    // Base64-encoded audio
+    const binaryString = atob(data.audioContent);
+    bytes = new Uint8Array(binaryString.length);
+    for (let i = 0; i < binaryString.length; i++) {
+      bytes[i] = binaryString.charCodeAt(i);
+    }
+  } else if (data.audio?.url) {
+    // Fetch from URL
+    const audioResponse = await fetch(data.audio.url);
+    if (!audioResponse.ok) {
+      throw new Error(`Failed to fetch Inworld audio: ${audioResponse.status}`);
+    }
+    const audioBuffer = await audioResponse.arrayBuffer();
+    bytes = new Uint8Array(audioBuffer);
+  } else {
+    throw new Error(`Inworld API response missing audio: ${JSON.stringify(data)}`);
   }
 
   return { audio: bytes, duration };
