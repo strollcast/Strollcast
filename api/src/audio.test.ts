@@ -63,7 +63,7 @@ describe('getCachedSegment', () => {
 
     const result = await getCachedSegment(mockR2Cache, 'test-key');
 
-    expect(mockR2Cache.get).toHaveBeenCalledWith('segments/test-key.mp3');
+    expect(mockR2Cache.get).toHaveBeenCalledWith('tts_cache/test-key.mp3');
     expect(result).not.toBeNull();
     expect(result!.duration).toBe(5.5);
     expect(result!.audio).toEqual(audioData);
@@ -115,7 +115,7 @@ describe('saveCachedSegment', () => {
     await saveCachedSegment(mockR2Cache, 'test-key', audioData, 5.5);
 
     expect(mockR2Cache.put).toHaveBeenCalledWith(
-      'segments/test-key.mp3',
+      'tts_cache/test-key.mp3',
       audioData,
       {
         httpMetadata: { contentType: 'audio/mpeg' },
@@ -126,7 +126,7 @@ describe('saveCachedSegment', () => {
 
   it('handles R2 put error gracefully', async () => {
     const audioData = new Uint8Array([1, 2, 3, 4]);
-    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => { });
     const mockR2Cache = {
       put: vi.fn().mockRejectedValue(new Error('R2 error')),
     } as unknown as R2Bucket;

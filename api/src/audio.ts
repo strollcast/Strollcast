@@ -14,6 +14,8 @@ const SAMPLE_RATES_V1 = [44100, 48000, 32000, 0];
 const SAMPLE_RATES_V2 = [22050, 24000, 16000, 0];
 const SAMPLE_RATES_V25 = [11025, 12000, 8000, 0];
 
+const TTS_CACHE_BASE = "tts_cache"
+
 /**
  * Parse MP3 frame header to get bitrate and sample rate.
  * Returns null if not a valid MP3 frame.
@@ -508,7 +510,7 @@ export async function getCachedSegment(
   cacheKey: string
 ): Promise<CachedSegment | null> {
   try {
-    const object = await r2Cache.get(`tts_cache/${cacheKey}.mp3`);
+    const object = await r2Cache.get(`${TTS_CACHE_BASE}/${cacheKey}.mp3`);
     if (object) {
       // Skip legacy cached segments without duration metadata
       if (!object.customMetadata?.duration) {
@@ -535,7 +537,7 @@ export async function saveCachedSegment(
   duration: number
 ): Promise<void> {
   try {
-    await r2Cache.put(`tts_cache/${cacheKey}.mp3`, audio, {
+    await r2Cache.put(`${TTS_CACHE_BASE}/${cacheKey}.mp3`, audio, {
       httpMetadata: { contentType: "audio/mpeg" },
       customMetadata: { duration: duration.toString() },
     });
