@@ -6,6 +6,35 @@
  */
 
 import { AwsClient } from "aws4fetch";
+import { TagLib } from "taglib-wasm";
+
+// Lazy-initialized TagLib instance
+let taglibInstance: Awaited<ReturnType<typeof TagLib.initialize>> | null = null;
+
+async function getTagLib(): Promise<Awaited<ReturnType<typeof TagLib.initialize>>> {
+  if (!taglibInstance) {
+    taglibInstance = await TagLib.initialize();
+  }
+  return taglibInstance;
+}
+
+/**
+ * Get duration of MP3 audio data using taglib-wasm.
+ */
+async function getMp3Duration(audioData: Uint8Array): Promise<number> {
+  const taglib = await getTagLib();
+  const file = await taglib.open(audioData);
+
+  try {
+    const properties = file.audioProperties();
+    if (!properties) {
+      throw new Error("Failed to get audio properties from MP3");
+    }
+    return properties.length;
+  } finally {
+    file.dispose();
+  }
+}
 
 // TTS Provider types
 export type TTSProvider = "elevenlabs" | "inworld";
@@ -247,14 +276,9 @@ async function generateSegmentAudioInworld(
     throw new Error(`Inworld API error: ${response.status} ${errorText}`);
   }
 
-  const data = await response.json() as Record<string, unknown>;
-  console.log("Inworld API response:", JSON.stringify(data, null, 2));
+  const data = await response.json() as { audio?: { url?: string } };
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const anyData = data as any;
-
-  // Handle different response structures
-  const audioUrl = anyData.audio?.url || anyData.audio_url;
+  const audioUrl = data.audio?.url;
   if (!audioUrl) {
     throw new Error(`Inworld API response missing audio URL: ${JSON.stringify(data)}`);
   }
@@ -268,10 +292,11 @@ async function generateSegmentAudioInworld(
   const audioBuffer = await audioResponse.arrayBuffer();
   const bytes = new Uint8Array(audioBuffer);
 
-  // Try multiple locations for duration
-  const duration = anyData.metadata?.duration ?? anyData.duration ?? anyData.audio?.duration;
+  // Get accurate duration from MP3 using taglib-wasm
+  const duration = await getMp3Duration(bytes);
+
   if (!Number.isFinite(duration) || duration <= 0) {
-    throw new Error(`Inworld API returned invalid duration: ${duration}. Response: ${JSON.stringify(data)}`);
+    throw new Error(`TagLib returned invalid duration: ${duration}`);
   }
 
   return { audio: bytes, duration };
