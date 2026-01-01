@@ -8,6 +8,9 @@ interface Props {
 const { title } = Astro.props;
 const session = await getSession(Astro);
 const isAdmin = (session?.user as any)?.username === ADMIN_GITHUB_USERNAME;
+
+const gitSha = import.meta.env.PUBLIC_GIT_SHA;
+const shortSha = gitSha?.substring(0, 7) || 'dev';
 ---
 
 <!doctype html>
@@ -59,6 +62,16 @@ const isAdmin = (session?.user as any)?.username === ADMIN_GITHUB_USERNAME;
         <a href="/privacy">Privacy</a>
         <span class="footer-separator">·</span>
         <a href="/terms">Terms</a>
+        {gitSha && (
+          <>
+            <span class="footer-separator">·</span>
+            <span class="build-version">
+              Version <a href={`https://github.com/strollcast/director/commit/${gitSha}`} class="build-sha" title={gitSha}>
+                {shortSha}
+              </a>
+            </span>
+          </>
+        )}
       </p>
     </footer>
   </body>
@@ -276,6 +289,16 @@ const isAdmin = (session?.user as any)?.username === ADMIN_GITHUB_USERNAME;
   .footer-separator {
     margin: 0 0.5rem;
     color: var(--border);
+  }
+
+  .build-version {
+    opacity: 0.5;
+    font-size: 0.7125rem;
+  }
+
+  .build-sha {
+    font-family: 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas, monospace;
+    color: inherit;
   }
 
   h1 {

@@ -41,6 +41,8 @@ jobs:
           # Auth.js requires these at build time for type checking
           AUTH_SECRET: ${{ secrets.AUTH_SECRET }}
           AUTH_TRUST_HOST: 'true'
+          # Git commit SHA for footer
+          PUBLIC_GIT_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
 
       - name: Deploy to Cloudflare Pages
         uses: cloudflare/wrangler-action@v3
