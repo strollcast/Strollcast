@@ -1,6 +1,6 @@
 import { generateTranscript } from "./transcript";
 import { uploadTranscript } from "./audio";
-import { generateEpisode, type R2Credentials } from "./episode-generator";
+import { generateEpisode, generateVttOnly, type R2Credentials } from "./episode-generator";
 import { Container } from "@cloudflare/containers";
 import { checkScriptExists, pushScript, fetchScript, getScriptMetadata, type GitHubConfig } from "./github";
 import { migrateScriptsToGitHub } from "../scripts/migrate-scripts-to-github";
@@ -983,15 +983,32 @@ async function handleGenerateAudio(jobId: string, env: Env): Promise<void> {
     job.authors || "unknown"
   );
 
-  // Check if audio file already exists in R2 (idempotency)
-  const mp3Path = `episodes/${episodeId}/${episodeId}.mp3`;
-  const m4aPath = `episodes/${episodeId}/${episodeId}.m4a`;
-  const existingMp3 = await env.R2.head(mp3Path);
-  const existingM4a = await env.R2.head(m4aPath);
+  // Check if episode already exists in database
+  const existingEpisode = await env.DB.prepare(
+    `SELECT audio_url, transcript_url FROM episodes WHERE id = ?`
+  )
+    .bind(episodeId)
+    .first<{ audio_url: string; transcript_url: string | null }>();
 
-  if (existingMp3 || existingM4a) {
-    const audioPath = existingMp3 ? mp3Path : m4aPath;
-    console.log(`Audio file already exists at ${audioPath}, skipping generation`);
+  // Check if audio file AND VTT already exist in R2 (idempotency)
+  let existingAudioPath: string | null = null;
+  let existingVttPath: string | null = null;
+  let existingAudio: R2Object | null = null;
+  let existingVtt: R2Object | null = null;
+
+  if (existingEpisode) {
+    // Use database URLs to determine R2 paths
+    existingAudioPath = existingEpisode.audio_url.replace("https://released.strollcast.com/", "");
+    existingAudio = await env.R2.head(existingAudioPath);
+
+    if (existingEpisode.transcript_url) {
+      existingVttPath = existingEpisode.transcript_url.replace("https://released.strollcast.com/", "");
+      existingVtt = await env.R2.head(existingVttPath);
+    }
+  }
+
+  if (existingAudio && existingVtt) {
+    console.log(`Audio and VTT already exist for ${episodeId}, skipping generation`);
     // Mark job as completed
     await env.DB.prepare(
       `UPDATE jobs
@@ -1005,13 +1022,6 @@ async function handleGenerateAudio(jobId: string, env: Env): Promise<void> {
       .run();
     return;
   }
-
-  // Update status
-  await env.DB.prepare(
-    `UPDATE jobs SET status = 'generating_audio', updated_at = datetime('now') WHERE id = ?`
-  )
-    .bind(jobId)
-    .run();
 
   // Read script from GitHub (with R2 fallback for episodes not yet migrated)
   const githubConfig: GitHubConfig = {
@@ -1035,6 +1045,68 @@ async function handleGenerateAudio(jobId: string, env: Env): Promise<void> {
 
   // Episode name is now the same as episode ID
   const episodeName = episodeId;
+
+  // Check if we only need to regenerate VTT
+  if (existingAudio && !existingVtt) {
+    console.log(`Audio exists but VTT missing for ${episodeId}, generating VTT only`);
+
+    // Update status
+    await env.DB.prepare(
+      `UPDATE jobs SET status = 'generating_audio', updated_at = datetime('now') WHERE id = ?`
+    )
+      .bind(jobId)
+      .run();
+
+    // Generate VTT only using cached segments
+    const vttContent = await generateVttOnly(
+      scriptContent,
+      episodeName,
+      {
+        elevenlabs: env.ELEVENLABS_API_KEY,
+        inworld: env.INWORLD_API_KEY,
+      },
+      env.R2_CACHE
+    );
+
+    // Upload VTT
+    const vttUrl = await uploadTranscript(env.R2, episodeId, vttContent);
+
+    // Use existing audio URL from database
+    const audioUrl = existingEpisode!.audio_url;
+
+    // Update episode with VTT URL (audio URL already exists)
+    await env.DB.prepare(
+      `UPDATE episodes
+       SET transcript_url = ?,
+           updated_at = datetime('now')
+       WHERE id = ?`
+    )
+      .bind(vttUrl, episodeId)
+      .run();
+
+    // Mark job as completed
+    await env.DB.prepare(
+      `UPDATE jobs
+       SET status = 'completed',
+           episode_id = ?,
+           completed_at = datetime('now'),
+           updated_at = datetime('now')
+       WHERE id = ?`
+    )
+      .bind(episodeId, jobId)
+      .run();
+
+    console.log(`VTT generated for ${episodeId}: ${vttUrl}`);
+    return;
+  }
+
+  // Full generation (both audio and VTT)
+  // Update status
+  await env.DB.prepare(
+    `UPDATE jobs SET status = 'generating_audio', updated_at = datetime('now') WHERE id = ?`
+  )
+    .bind(jobId)
+    .run();
 
   // R2 credentials for presigned URLs
   const r2Credentials: R2Credentials = {

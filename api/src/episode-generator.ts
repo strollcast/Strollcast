@@ -623,6 +623,43 @@ export function generateWebVtt(timingInfo: TimingInfo[]): string {
 }
 
 /**
+ * Generate only VTT transcript using cached audio segments.
+ * This is useful when audio already exists but VTT is missing.
+ */
+export async function generateVttOnly(
+  scriptContent: string,
+  episodeName: string,
+  apiKeys: { elevenlabs?: string; inworld?: string },
+  r2Cache: R2Bucket,
+  provider: TTSProvider = "elevenlabs"
+): Promise<string> {
+  // Validate inputs
+  const apiKey = validateApiKey(provider, apiKeys);
+  const episodeId = deriveEpisodeId(episodeName);
+
+  // Parse script
+  const segments = parseScript(scriptContent);
+  if (segments.length === 0) {
+    throw new Error("No valid segments found in script");
+  }
+
+  // Generate audio segments (will use cached segments, no API calls)
+  const { timingInfo } = await generateAudioSegments(
+    segments,
+    provider,
+    apiKey,
+    r2Cache
+  );
+  console.log(`generateVttOnly: retrieved timing info from cache for '${episodeId}'.`);
+
+  // Generate VTT transcript
+  const vttContent = generateWebVtt(timingInfo);
+  console.log(`generateVttOnly: generated VTT file for '${episodeName}'.`);
+
+  return vttContent;
+}
+
+/**
  * Generate a complete podcast episode.
  */
 export async function generateEpisode(
