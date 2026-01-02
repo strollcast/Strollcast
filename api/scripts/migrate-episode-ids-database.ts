@@ -38,10 +38,20 @@ export async function migrateEpisodeIdsDatabase(
   console.log('Starting database migration...\n');
 
   try {
-    // Step 1: Create new episodes table
-    console.log('Step 1: Creating new episodes table...');
+    // Step 1: Drop and recreate episodes_new table (for idempotency)
+    console.log('Step 1: Preparing episodes_new table...');
+
+    // Drop table if it exists from a previous failed run
+    try {
+      await db.prepare(`DROP TABLE IF EXISTS episodes_new`).run();
+      console.log('  Dropped existing episodes_new table (if any)');
+    } catch (error) {
+      console.log('  No existing episodes_new table to drop');
+    }
+
+    // Create fresh episodes_new table
     await db.prepare(`
-      CREATE TABLE IF NOT EXISTS episodes_new (
+      CREATE TABLE episodes_new (
         id TEXT PRIMARY KEY,
         title TEXT NOT NULL,
         authors TEXT NOT NULL,
@@ -58,7 +68,7 @@ export async function migrateEpisodeIdsDatabase(
         topics TEXT
       )
     `).run();
-    console.log('  Created episodes_new table');
+    console.log('  Created fresh episodes_new table');
 
     // Step 2: Copy all episodes with new IDs
     console.log('\nStep 2: Copying episodes with new IDs...');
