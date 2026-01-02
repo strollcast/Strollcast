@@ -739,11 +739,16 @@ async function handleGenerateTranscript(jobId: string, env: Env): Promise<void> 
     return;
   }
 
+  if (!job.title || !job.year || !job.authors) {
+    console.log(`Cannot generate transcript for job with missing tile: ${jobId}.`)
+    return
+  }
+
   // Generate episode ID from title (same logic used in audio generation)
   const episodeId = generateEpisodeId(
-    job.title || "untitled",
-    job.year || 2024,
-    job.authors || "unknown"
+    job.title,
+    job.year,
+    job.authors,
   );
   const scriptKey = `episodes/${episodeId}/script.md`;
 
@@ -944,7 +949,7 @@ async function handleGenerateAudio(jobId: string, env: Env): Promise<void> {
   console.log(`Episode ${episodeId} completed: ${audioUrl}`);
 }
 
-function generateEpisodeId(title: string, year: number, authors: string): string {
+export function generateEpisodeId(title: string, year: number, authors: string): string {
   // Validate required parameters
   if (!title || title.trim() === "") {
     throw new Error("Title is required for episode ID generation");
@@ -957,6 +962,8 @@ function generateEpisodeId(title: string, year: number, authors: string): string
   }
 
   // Extract last name from first author
+  // Remove "et al." suffix before parsing
+  authors = authors.replace(" et al.", "");
   const firstAuthor = authors.split(",")[0].split(" and ")[0].trim();
   const lastName = firstAuthor.split(" ").pop()?.toLowerCase() || "unknown";
 
