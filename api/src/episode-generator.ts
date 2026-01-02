@@ -6,12 +6,11 @@
 import {
   parseScript,
   computeCacheKey,
-  getCachedSegment,
-  saveCachedSegment,
   type TTSProvider,
-  type R2Credentials,
 } from "./audio";
 import { AwsClient } from "aws4fetch";
+
+const TTS_CACHE_BASE = "tts_cache";
 
 // Voice configuration
 const ELEVENLABS_VOICES: Record<string, string> = {
@@ -100,6 +99,70 @@ interface InworldApiResponse {
       wordEndTimeSeconds: number[];
     };
   };
+}
+
+/**
+ * R2 credentials for generating presigned URLs.
+ * Must be set via wrangler secrets.
+ */
+export interface R2Credentials {
+  accessKeyId: string;
+  secretAccessKey: string;
+  accountId: string;
+}
+
+/**
+ * Cached segment with audio data and duration.
+ */
+export interface CachedSegment {
+  audio: Uint8Array;
+  duration: number;
+}
+
+/**
+ * Check R2 cache for a segment.
+ * Returns audio data and duration from customMetadata.
+ * Returns null if segment is missing or lacks duration metadata (legacy cache).
+ */
+export async function getCachedSegment(
+  r2Cache: R2Bucket,
+  cacheKey: string
+): Promise<CachedSegment | null> {
+  try {
+    const object = await r2Cache.get(`${TTS_CACHE_BASE}/${cacheKey}.mp3`);
+    if (object) {
+      // Skip legacy cached segments without duration metadata
+      if (!object.customMetadata?.duration) {
+        return null;
+      }
+      const arrayBuffer = await object.arrayBuffer();
+      const audio = new Uint8Array(arrayBuffer);
+      const duration = parseFloat(object.customMetadata.duration);
+      return { audio, duration };
+    }
+  } catch {
+    // Cache miss or error
+  }
+  return null;
+}
+
+/**
+ * Save segment to R2 cache with duration in customMetadata.
+ */
+export async function saveCachedSegment(
+  r2Cache: R2Bucket,
+  cacheKey: string,
+  audio: Uint8Array,
+  duration: number
+): Promise<void> {
+  try {
+    await r2Cache.put(`${TTS_CACHE_BASE}/${cacheKey}.mp3`, audio, {
+      httpMetadata: { contentType: "audio/mpeg" },
+      customMetadata: { duration: duration.toString() },
+    });
+  } catch (error) {
+    console.error("Failed to cache segment:", error);
+  }
 }
 
 /**

@@ -1,6 +1,6 @@
 import { generateTranscript } from "./transcript";
-import { uploadTranscript, type R2Credentials } from "./audio";
-import { generateEpisode } from "./episode-generator";
+import { uploadTranscript } from "./audio";
+import { generateEpisode, type R2Credentials } from "./episode-generator";
 import { Container } from "@cloudflare/containers";
 
 /**
