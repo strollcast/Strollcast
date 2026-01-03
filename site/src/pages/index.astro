@@ -20,6 +20,16 @@ import Layout from '../layouts/Layout.astro';
 
   <section class="episodes">
     <h2>Episodes</h2>
+    <div class="search-container">
+      <input
+        type="search"
+        id="search-input"
+        class="search-input"
+        placeholder="Search episodes by title or abstract..."
+        autocomplete="off"
+      />
+      <div id="search-status" class="search-status"></div>
+    </div>
     <div id="episode-grid" class="episode-grid">
       <div class="loading">Loading episodes...</div>
     </div>
@@ -39,14 +49,51 @@ import Layout from '../layouts/Layout.astro';
     topics: string[];
   }
 
-  async function loadEpisodes() {
+  function debounce<T extends (...args: any[]) => any>(
+    func: T,
+    wait: number
+  ): (...args: Parameters<T>) => void {
+    let timeout: ReturnType<typeof setTimeout> | null = null;
+    return function(...args: Parameters<T>) {
+      if (timeout) clearTimeout(timeout);
+      timeout = setTimeout(() => func(...args), wait);
+    };
+  }
+
+  async function loadEpisodes(searchQuery?: string) {
     const grid = document.getElementById('episode-grid');
+    const searchStatus = document.getElementById('search-status');
     if (!grid) return;
 
     try {
-      const response = await fetch('https://api.strollcast.com/episodes');
+      // Show loading state
+      grid.innerHTML = '<div class="loading">Loading episodes...</div>';
+      if (searchStatus) searchStatus.textContent = '';
+
+      const url = searchQuery
+        ? `https://api.strollcast.com/search?q=${encodeURIComponent(searchQuery)}`
+        : 'https://api.strollcast.com/episodes';
+
+      const response = await fetch(url);
       const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to fetch episodes');
+      }
+
       const episodes: Episode[] = data.episodes;
+
+      // Update search status
+      if (searchStatus && searchQuery) {
+        searchStatus.textContent = `Found ${data.count || episodes.length} episode${episodes.length !== 1 ? 's' : ''}`;
+      }
+
+      if (episodes.length === 0) {
+        grid.innerHTML = searchQuery
+          ? `<div class="error">No episodes found matching "${searchQuery}". Try a different search term.</div>`
+          : '<div class="error">No episodes available.</div>';
+        return;
+      }
 
       grid.innerHTML = episodes.map(episode => `
         <article class="episode-card">
@@ -78,7 +125,44 @@ import Layout from '../layouts/Layout.astro';
     }
   }
 
-  loadEpisodes();
+  // Handle search input
+  const searchInput = document.getElementById('search-input') as HTMLInputElement;
+  if (searchInput) {
+    // Load initial query from URL if present
+    const urlParams = new URLSearchParams(window.location.search);
+    const initialQuery = urlParams.get('q');
+    if (initialQuery) {
+      searchInput.value = initialQuery;
+      loadEpisodes(initialQuery);
+    } else {
+      loadEpisodes();
+    }
+
+    // Debounced search handler
+    const handleSearch = debounce((query: string) => {
+      const trimmedQuery = query.trim();
+
+      // Update URL without reloading page
+      const newUrl = new URL(window.location.href);
+      if (trimmedQuery) {
+        newUrl.searchParams.set('q', trimmedQuery);
+      } else {
+        newUrl.searchParams.delete('q');
+      }
+      window.history.pushState({}, '', newUrl);
+
+      // Load episodes with search query
+      loadEpisodes(trimmedQuery || undefined);
+    }, 300);
+
+    searchInput.addEventListener('input', (e) => {
+      const target = e.target as HTMLInputElement;
+      handleSearch(target.value);
+    });
+  } else {
+    // Fallback: load all episodes if search input not found
+    loadEpisodes();
+  }
 </script>
 
 <style is:global>
@@ -105,6 +189,38 @@ import Layout from '../layouts/Layout.astro';
 
   .episodes h2 {
     margin-bottom: 1.5rem;
+  }
+
+  .search-container {
+    margin-bottom: 1.5rem;
+  }
+
+  .search-input {
+    width: 100%;
+    padding: 0.875rem 1rem;
+    font-size: 1rem;
+    border: 2px solid var(--border);
+    border-radius: 8px;
+    background: var(--bg-card);
+    color: var(--text-primary);
+    transition: border-color 0.2s, box-shadow 0.2s;
+  }
+
+  .search-input:focus {
+    outline: none;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.1);
+  }
+
+  .search-input::placeholder {
+    color: var(--text-secondary);
+  }
+
+  .search-status {
+    margin-top: 0.5rem;
+    font-size: 0.875rem;
+    color: var(--text-secondary);
+    min-height: 1.25rem;
   }
 
   .episode-grid {

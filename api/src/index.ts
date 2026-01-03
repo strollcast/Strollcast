@@ -248,6 +248,40 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
     return Response.json(toApiResponse(episode), { headers: corsHeaders });
   }
 
+  // GET /search - Search episodes by title or abstract
+  if (path === "/search" && request.method === "GET") {
+    const url = new URL(request.url);
+    const query = url.searchParams.get("q");
+
+    if (!query || query.trim() === "") {
+      return Response.json(
+        { error: "Missing or empty query parameter 'q'" },
+        { status: 400, headers: corsHeaders }
+      );
+    }
+
+    // Search in title and description (abstract) using case-insensitive LIKE
+    const searchPattern = `%${query}%`;
+    const { results } = await env.DB.prepare(
+      `SELECT * FROM episodes
+       WHERE published = 1
+       AND (title LIKE ? COLLATE NOCASE OR description LIKE ? COLLATE NOCASE)
+       ORDER BY year DESC, created_at DESC`
+    )
+      .bind(searchPattern, searchPattern)
+      .all<Episode>();
+
+    return Response.json(
+      {
+        version: "2.0",
+        query,
+        count: results.length,
+        episodes: results.map(toApiResponse),
+      },
+      { headers: corsHeaders }
+    );
+  }
+
   // ===== Job Endpoints =====
 
   // POST /jobs - Create a new job (requires authentication)
