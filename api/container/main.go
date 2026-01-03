@@ -18,6 +18,7 @@ import (
 
 // ConcatRequest is the request body for /concat endpoint
 type ConcatRequest struct {
+	EpisodeID string           `json:"episode_id"` // Episode ID for logging
 	Segments  []string         `json:"segments"`   // Signed URLs for input MP3 files
 	OutputURL string           `json:"output_url"` // Signed URL for uploading result
 	Metadata  ConcatMetadata   `json:"metadata"`
@@ -91,7 +92,7 @@ func handleConcat(w http.ResponseWriter, r *http.Request) {
 	defer os.RemoveAll(workDir)
 
 	// Download all segments
-	fmt.Printf("Downloading %d segments...\n", len(req.Segments))
+	fmt.Printf("[%s] Downloading %d segments...\n", req.EpisodeID, len(req.Segments))
 	listFile := filepath.Join(workDir, "list.txt")
 	listContent := ""
 
@@ -112,7 +113,7 @@ func handleConcat(w http.ResponseWriter, r *http.Request) {
 
 	// Run FFmpeg to concatenate and normalize
 	outputPath := filepath.Join(workDir, "output.mp3")
-	fmt.Println("Running FFmpeg concatenation with volume normalization...")
+	fmt.Printf("[%s] Running FFmpeg concatenation with volume normalization...\n", req.EpisodeID)
 
 	args := []string{
 		"-f", "concat",
@@ -150,10 +151,10 @@ func handleConcat(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Get duration using ffprobe
-	fmt.Println("Getting duration with ffprobe...")
+	fmt.Printf("[%s] Getting duration with ffprobe...\n", req.EpisodeID)
 	duration, err := getDuration(outputPath)
 	if err != nil {
-		fmt.Printf("Warning: Failed to get duration: %v\n", err)
+		fmt.Printf("[%s] Warning: Failed to get duration: %v\n", req.EpisodeID, err)
 		duration = 0
 	}
 
@@ -166,7 +167,7 @@ func handleConcat(w http.ResponseWriter, r *http.Request) {
 	fileSize := fileInfo.Size()
 
 	// Upload to output URL
-	fmt.Println("Uploading result...")
+	fmt.Printf("[%s] Uploading result...\n", req.EpisodeID)
 	if err := uploadFile(outputPath, req.OutputURL); err != nil {
 		sendError(w, fmt.Sprintf("Failed to upload result: %v", err), http.StatusInternalServerError)
 		return
@@ -180,7 +181,7 @@ func handleConcat(w http.ResponseWriter, r *http.Request) {
 		FileSize:        fileSize,
 	})
 
-	fmt.Printf("Successfully concatenated and normalized %d segments: %.2fs, %d bytes\n", len(req.Segments), duration, fileSize)
+	fmt.Printf("[%s] Successfully concatenated and normalized %d segments: %.2fs, %d bytes\n", req.EpisodeID, len(req.Segments), duration, fileSize)
 }
 
 func downloadFile(url, destPath string) error {

@@ -63,6 +63,7 @@ export interface GenerateEpisodeResult {
 }
 
 interface ConcatRequest {
+  episode_id: string;
   segments: string[];
   output_url: string;
   metadata: {
@@ -542,6 +543,7 @@ export async function concatenateWithFFmpeg(
   const container = ffmpegContainer.get(containerId);
 
   const concatRequest: ConcatRequest = {
+    episode_id: episodeId,
     segments: segmentUrls,
     output_url: outputUrl,
     metadata: {
