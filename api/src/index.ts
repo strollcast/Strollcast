@@ -1115,8 +1115,8 @@ async function handleGenerateTranscript(jobId: string, env: Env): Promise<void> 
     return
   }
 
-  // Generate episode ID from title (same logic used in audio generation)
-  const episodeId = generateEpisodeId(
+  // Use existing episode_id if set (from create-from-github), otherwise generate from title
+  const episodeId = job.episode_id || generateEpisodeId(
     job.title,
     job.year,
     job.authors,
@@ -1206,8 +1206,8 @@ async function handleGenerateAudio(jobId: string, env: Env): Promise<void> {
     return;
   }
 
-  // Generate episode ID from title
-  const episodeId = generateEpisodeId(
+  // Use existing episode_id if set (from create-from-github), otherwise generate from title
+  const episodeId = job.episode_id || generateEpisodeId(
     job.title || "untitled",
     job.year || 2024,
     job.authors || "unknown"
