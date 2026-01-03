@@ -758,9 +758,9 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
       );
     }
 
-    // Get all episodes
+    // Get all published episodes (skip unpublished ones, which may be awaiting regeneration)
     const { results: episodes } = await env.DB.prepare(
-      `SELECT id, audio_url, transcript_url FROM episodes ORDER BY id`
+      `SELECT id, audio_url, transcript_url FROM episodes WHERE published = 1 ORDER BY id`
     ).all<{ id: string; audio_url: string; transcript_url: string | null }>();
 
     const mismatches: Array<{
@@ -779,8 +779,10 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
       const audioInR2 = await env.R2.head(audioPath);
       const vttInR2 = vttPath ? await env.R2.head(vttPath) : null;
 
-      // Report if there's a mismatch (URL in DB but file not in R2)
-      if (!audioInR2 || (ep.transcript_url && !vttInR2)) {
+      // Report mismatch if audio file is missing OR if VTT URL is set but file is missing
+      const hasMismatch = !audioInR2 || (ep.transcript_url && !vttInR2);
+
+      if (hasMismatch) {
         mismatches.push({
           episodeId: ep.id,
           audioInDb: true,
@@ -821,7 +823,7 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
 
     const fixed: string[] = [];
 
-    // Check each episode and clear URLs if files are missing
+    // Check each episode and unpublish if files are missing
     for (const ep of episodes) {
       const audioPath = ep.audio_url.replace("https://released.strollcast.com/", "");
       const vttPath = ep.transcript_url?.replace("https://released.strollcast.com/", "");
@@ -830,32 +832,35 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
       const vttInR2 = vttPath ? await env.R2.head(vttPath) : null;
 
       let needsUpdate = false;
-      let newAudioUrl = ep.audio_url;
       let newVttUrl = ep.transcript_url;
 
-      // If audio URL is set but file is missing in R2, clear it
+      // If audio file is missing in R2, unpublish the episode
+      // (audio_url is NOT NULL in schema, so we can't clear it)
       if (!audioInR2) {
-        console.log(`Clearing audio_url for ${ep.id} (file not found in R2)`);
-        newAudioUrl = `https://released.strollcast.com/episodes/${ep.id}/${ep.id}.mp3`;
+        console.log(`Unpublishing ${ep.id} (audio file not found in R2 at ${audioPath})`);
+        await env.DB.prepare(
+          `UPDATE episodes
+           SET published = 0,
+               updated_at = datetime('now')
+           WHERE id = ?`
+        ).bind(ep.id).run();
+        fixed.push(ep.id);
         needsUpdate = true;
       }
 
       // If VTT URL is set but file is missing in R2, clear it
       if (ep.transcript_url && !vttInR2) {
-        console.log(`Clearing transcript_url for ${ep.id} (file not found in R2)`);
+        console.log(`Clearing transcript_url for ${ep.id} (VTT file not found in R2)`);
         newVttUrl = null;
-        needsUpdate = true;
-      }
-
-      if (needsUpdate) {
-        await env.DB.prepare(
-          `UPDATE episodes
-           SET audio_url = ?,
-               transcript_url = ?,
-               updated_at = datetime('now')
-           WHERE id = ?`
-        ).bind(newAudioUrl, newVttUrl, ep.id).run();
-        fixed.push(ep.id);
+        if (!needsUpdate) {
+          await env.DB.prepare(
+            `UPDATE episodes
+             SET transcript_url = ?,
+                 updated_at = datetime('now')
+             WHERE id = ?`
+          ).bind(newVttUrl, ep.id).run();
+          fixed.push(ep.id);
+        }
       }
     }
 
