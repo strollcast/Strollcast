@@ -156,3 +156,139 @@ describe('generateEpisodeId', () => {
     expect(episodeId).toBe('lastname-2023-test_paper');
   });
 });
+
+describe('Frontmatter parsing for create-from-github', () => {
+  it('parses valid frontmatter with title and summary', () => {
+    const scriptContent = `---
+title: "Test Episode Title"
+summary: "This is a test summary"
+---
+
+**ERIC:** Welcome to the test episode...`;
+
+    const frontmatterMatch = scriptContent.match(/^---\n([\s\S]*?)\n---/);
+    expect(frontmatterMatch).toBeTruthy();
+
+    const frontmatter = frontmatterMatch![1];
+    const titleMatch = frontmatter.match(/title:\s*["'](.+?)["']/);
+    const summaryMatch = frontmatter.match(/summary:\s*["'](.+?)["']/);
+
+    expect(titleMatch).toBeTruthy();
+    expect(summaryMatch).toBeTruthy();
+    expect(titleMatch![1]).toBe('Test Episode Title');
+    expect(summaryMatch![1]).toBe('This is a test summary');
+  });
+
+  it('parses frontmatter with single quotes', () => {
+    const scriptContent = `---
+title: 'Episode with Single Quotes'
+summary: 'Summary with single quotes'
+---
+
+Content here...`;
+
+    const frontmatterMatch = scriptContent.match(/^---\n([\s\S]*?)\n---/);
+    const frontmatter = frontmatterMatch![1];
+    const titleMatch = frontmatter.match(/title:\s*["'](.+?)["']/);
+    const summaryMatch = frontmatter.match(/summary:\s*["'](.+?)["']/);
+
+    expect(titleMatch![1]).toBe('Episode with Single Quotes');
+    expect(summaryMatch![1]).toBe('Summary with single quotes');
+  });
+
+  it('returns null when frontmatter is missing', () => {
+    const scriptContent = `**ERIC:** Welcome to the episode...`;
+
+    const frontmatterMatch = scriptContent.match(/^---\n([\s\S]*?)\n---/);
+    expect(frontmatterMatch).toBeNull();
+  });
+
+  it('returns null when title is missing', () => {
+    const scriptContent = `---
+summary: "Test summary"
+---
+
+Content...`;
+
+    const frontmatterMatch = scriptContent.match(/^---\n([\s\S]*?)\n---/);
+    const frontmatter = frontmatterMatch![1];
+    const titleMatch = frontmatter.match(/title:\s*["'](.+?)["']/);
+
+    expect(titleMatch).toBeNull();
+  });
+
+  it('returns null when summary is missing', () => {
+    const scriptContent = `---
+title: "Test Title"
+---
+
+Content...`;
+
+    const frontmatterMatch = scriptContent.match(/^---\n([\s\S]*?)\n---/);
+    const frontmatter = frontmatterMatch![1];
+    const summaryMatch = frontmatter.match(/summary:\s*["'](.+?)["']/);
+
+    expect(summaryMatch).toBeNull();
+  });
+
+  it('extracts year and authors from episode ID', () => {
+    const episodeId = 'chen-2023-punica_multi_tenant';
+    const idParts = episodeId.split('-');
+    const year = parseInt(idParts[1]);
+    const authors = idParts[0] ? `${idParts[0].charAt(0).toUpperCase()}${idParts[0].slice(1)} et al.` : 'Unknown';
+
+    expect(year).toBe(2023);
+    expect(authors).toBe('Chen et al.');
+  });
+
+  it('handles episode ID without year', () => {
+    const episodeId = 'strollcast-overview';
+    const idParts = episodeId.split('-');
+    const year = parseInt(idParts[1]) || new Date().getFullYear();
+    const authors = idParts[0] ? `${idParts[0].charAt(0).toUpperCase()}${idParts[0].slice(1)} et al.` : 'Unknown';
+
+    expect(year).toBe(new Date().getFullYear());
+    expect(authors).toBe('Strollcast et al.');
+  });
+
+  it('validates folder name format (lowercase, numbers, hyphens only)', () => {
+    const validNames = [
+      'chen-2023-punica',
+      'strollcast-2026-overview',
+      'test-episode-123',
+    ];
+
+    const invalidNames = [
+      'Chen-2023-Punica', // uppercase
+      'test_episode', // underscore
+      'test episode', // space
+      'test@episode', // special char
+    ];
+
+    const pattern = /^[a-z0-9-]+$/;
+
+    validNames.forEach(name => {
+      expect(pattern.test(name)).toBe(true);
+    });
+
+    invalidNames.forEach(name => {
+      expect(pattern.test(name)).toBe(false);
+    });
+  });
+
+  it('parses frontmatter with multiline summary', () => {
+    const scriptContent = `---
+title: "Test Episode"
+summary: "This is a summary that spans multiple lines but should only match the first line"
+---
+
+Content...`;
+
+    const frontmatterMatch = scriptContent.match(/^---\n([\s\S]*?)\n---/);
+    const frontmatter = frontmatterMatch![1];
+    const summaryMatch = frontmatter.match(/summary:\s*["'](.+?)["']/);
+
+    // The regex uses non-greedy matching, so it should stop at the first quote
+    expect(summaryMatch![1]).toBe('This is a summary that spans multiple lines but should only match the first line');
+  });
+});

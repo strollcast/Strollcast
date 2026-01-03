@@ -3,7 +3,7 @@ import Layout from '../layouts/Layout.astro';
 
 interface Props {
   title: string;
-  currentPage: 'episodes' | 'tools';
+  currentPage: 'episodes' | 'create' | 'tools';
 }
 
 const { title, currentPage } = Astro.props;
@@ -11,16 +11,16 @@ const { title, currentPage } = Astro.props;
 
 <Layout title={title}>
   <div class="admin-wrapper">
-    <div class="admin-content">
-      <slot />
-    </div>
-
     <nav class="admin-nav">
-      <h3>Admin Menu</h3>
       <ul>
         <li>
           <a href="/admin/episodes" class:list={['nav-link', { active: currentPage === 'episodes' }]}>
             Episodes
+          </a>
+        </li>
+        <li>
+          <a href="/admin/create" class:list={['nav-link', { active: currentPage === 'create' }]}>
+            Create
           </a>
         </li>
         <li>
@@ -30,6 +30,10 @@ const { title, currentPage } = Astro.props;
         </li>
       </ul>
     </nav>
+
+    <div class="admin-content">
+      <slot />
+    </div>
   </div>
 </Layout>
 
@@ -38,27 +42,15 @@ const { title, currentPage } = Astro.props;
     max-width: 1400px;
     margin: 0 auto;
     display: grid;
-    grid-template-columns: 1fr 200px;
+    grid-template-columns: 200px 1fr;
     gap: 2rem;
     padding: 2rem 1rem;
-  }
-
-  .admin-content {
-    min-width: 0; /* Prevents grid blowout */
   }
 
   .admin-nav {
     position: sticky;
     top: 2rem;
     height: fit-content;
-  }
-
-  .admin-nav h3 {
-    font-size: 0.875rem;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    color: var(--text-secondary);
-    margin-bottom: 1rem;
   }
 
   .admin-nav ul {
@@ -89,6 +81,10 @@ const { title, currentPage } = Astro.props;
     color: white;
   }
 
+  .admin-content {
+    min-width: 0; /* Prevents grid blowout */
+  }
+
   @media (max-width: 768px) {
     .admin-wrapper {
       grid-template-columns: 1fr;
@@ -97,16 +93,11 @@ const { title, currentPage } = Astro.props;
 
     .admin-nav {
       position: static;
-      order: -1; /* Show nav above content on mobile */
     }
 
     .admin-nav ul {
       display: flex;
       gap: 0.5rem;
-    }
-
-    .admin-nav h3 {
-      display: none;
     }
   }
 </style>

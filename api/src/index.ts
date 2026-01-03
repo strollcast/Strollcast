@@ -874,6 +874,136 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
     );
   }
 
+  // POST /admin/create-from-github - Create episode from GitHub script folder
+  if (path === "/admin/create-from-github" && request.method === "POST") {
+    // Verify API key
+    const authHeader = request.headers.get("Authorization");
+    const apiKey = authHeader?.replace("Bearer ", "");
+
+    if (!apiKey || apiKey !== env.API_KEY) {
+      return Response.json(
+        { error: "Unauthorized" },
+        { status: 401, headers: corsHeaders }
+      );
+    }
+
+    const body = await request.json() as { folderName: string };
+    const folderName = body.folderName;
+
+    if (!folderName || !/^[a-z0-9-]+$/.test(folderName)) {
+      return Response.json(
+        { error: "Invalid folder name. Use only lowercase letters, numbers, and hyphens." },
+        { status: 400, headers: corsHeaders }
+      );
+    }
+
+    const episodeId = folderName;
+
+    // Check if episode already exists
+    const existing = await env.DB.prepare(
+      `SELECT id FROM episodes WHERE id = ?`
+    )
+      .bind(episodeId)
+      .first();
+
+    if (existing) {
+      return Response.json(
+        { error: `Episode with ID ${episodeId} already exists` },
+        { status: 400, headers: corsHeaders }
+      );
+    }
+
+    try {
+      // Fetch script.md from GitHub
+      const githubConfig: GitHubConfig = {
+        token: env.GITHUB_TOKEN,
+        owner: 'strollcast',
+        repo: 'scripts',
+      };
+
+      const scriptContent = await fetchScript(episodeId, githubConfig);
+      if (!scriptContent) {
+        return Response.json(
+          { error: `Script not found at https://github.com/strollcast/scripts/tree/main/${episodeId}/script.md` },
+          { status: 404, headers: corsHeaders }
+        );
+      }
+
+      // Parse frontmatter
+      const frontmatterMatch = scriptContent.match(/^---\n([\s\S]*?)\n---/);
+      if (!frontmatterMatch) {
+        return Response.json(
+          { error: "Script must have frontmatter with title and summary" },
+          { status: 400, headers: corsHeaders }
+        );
+      }
+
+      const frontmatter = frontmatterMatch[1];
+      const titleMatch = frontmatter.match(/title:\s*["'](.+?)["']/);
+      const summaryMatch = frontmatter.match(/summary:\s*["'](.+?)["']/);
+
+      if (!titleMatch || !summaryMatch) {
+        return Response.json(
+          { error: "Frontmatter must include both 'title' and 'summary' fields" },
+          { status: 400, headers: corsHeaders }
+        );
+      }
+
+      const title = titleMatch[1];
+      const summary = summaryMatch[1];
+
+      // Extract year and authors from episode ID (format: lastname-YYYY-title)
+      const idParts = episodeId.split('-');
+      const year = parseInt(idParts[1]) || new Date().getFullYear();
+      const authors = idParts[0] ? `${idParts[0].charAt(0).toUpperCase()}${idParts[0].slice(1)} et al.` : 'Unknown';
+
+      // Create job for audio generation
+      const jobId = generateUUID();
+      const arxivUrl = `https://github.com/strollcast/scripts/tree/main/${episodeId}`;
+
+      await env.DB.prepare(
+        `INSERT INTO jobs (id, arxiv_id, arxiv_url, status, title, authors, year, abstract, episode_id, submitted_by)
+         VALUES (?, ?, ?, 'pending', ?, ?, ?, ?, ?, 'admin-create')`
+      )
+        .bind(
+          jobId,
+          episodeId,
+          arxivUrl,
+          title,
+          authors,
+          year,
+          summary,
+          episodeId
+        )
+        .run();
+
+      // Queue the job
+      await env.JOBS_QUEUE.send({
+        jobId,
+        episodeId,
+      });
+
+      console.log(`Created episode ${episodeId} and queued job ${jobId}`);
+
+      return Response.json(
+        {
+          success: true,
+          episodeId,
+          jobId,
+          title,
+          summary,
+        },
+        { headers: corsHeaders }
+      );
+    } catch (error) {
+      console.error('Error creating episode from GitHub:', error);
+      return Response.json(
+        { error: error instanceof Error ? error.message : 'Failed to create episode' },
+        { status: 500, headers: corsHeaders }
+      );
+    }
+  }
+
   // POST /admin/migrate-scripts - Migrate all scripts from R2 to GitHub
   if (path === "/admin/migrate-scripts" && request.method === "POST") {
     // Verify API key
