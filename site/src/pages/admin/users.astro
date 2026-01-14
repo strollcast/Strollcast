@@ -1,0 +1,421 @@
+---
+import AdminLayout from '../../components/AdminLayout.astro';
+import { getSession, ADMIN_GITHUB_USERNAME } from '../../lib/auth';
+
+const session = await getSession(Astro);
+
+if (!session) {
+  return Astro.redirect('/login?redirect=/admin/users');
+}
+
+const username = (session.user as any)?.username;
+if (username !== ADMIN_GITHUB_USERNAME) {
+  return Astro.redirect('/');
+}
+---
+
+<AdminLayout title="Admin - Users" currentPage="users">
+  <div class="admin-header">
+    <h1>Users</h1>
+    <p class="subtitle">Manage user quotas for podcast generation</p>
+  </div>
+
+  <div class="search-bar">
+    <input
+      type="text"
+      id="search-input"
+      placeholder="Search by username or ID..."
+      class="search-input"
+    />
+  </div>
+
+  <div id="users-list" class="users-list">
+    <div class="loading">Loading users...</div>
+  </div>
+</AdminLayout>
+
+<script>
+  interface User {
+    id: string;
+    githubUsername: string | null;
+    allowedCasts: number;
+    usedCasts: number;
+    remainingCasts: number;
+    createdAt: string;
+    updatedAt: string;
+  }
+
+  let debounceTimer: ReturnType<typeof setTimeout>;
+
+  async function loadUsers(search: string = '') {
+    const list = document.getElementById('users-list') as HTMLElement;
+
+    try {
+      const url = search
+        ? `/api/admin/users?search=${encodeURIComponent(search)}`
+        : '/api/admin/users';
+
+      const response = await fetch(url);
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to load users');
+      }
+
+      const users: User[] = data.users || [];
+
+      if (users.length === 0) {
+        list.innerHTML = `
+          <div class="empty-state">
+            <p>No users found.</p>
+          </div>
+        `;
+        return;
+      }
+
+      list.innerHTML = `
+        <table class="users-table">
+          <thead>
+            <tr>
+              <th>User</th>
+              <th class="col-numeric">Used</th>
+              <th class="col-numeric">Allowed</th>
+              <th class="col-numeric">Remaining</th>
+              <th class="col-actions">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${users.map(user => `
+              <tr data-id="${user.id}">
+                <td>
+                  <div class="user-cell">
+                    <span class="username">${user.githubUsername || 'Unknown'}</span>
+                    <span class="user-id">${user.id}</span>
+                  </div>
+                </td>
+                <td class="col-numeric">${user.usedCasts}</td>
+                <td class="col-numeric">
+                  <input
+                    type="number"
+                    class="quota-input"
+                    value="${user.allowedCasts}"
+                    min="0"
+                    data-user-id="${user.id}"
+                    data-original="${user.allowedCasts}"
+                  />
+                </td>
+                <td class="col-numeric ${user.remainingCasts <= 0 ? 'exhausted' : ''}">
+                  ${user.remainingCasts}
+                </td>
+                <td class="col-actions">
+                  <button
+                    class="btn btn-save"
+                    data-user-id="${user.id}"
+                    disabled
+                  >
+                    Save
+                  </button>
+                </td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      `;
+
+      // Add event listeners for quota inputs
+      document.querySelectorAll('.quota-input').forEach(input => {
+        input.addEventListener('input', handleQuotaChange);
+      });
+
+      // Add event listeners for save buttons
+      document.querySelectorAll('.btn-save').forEach(btn => {
+        btn.addEventListener('click', handleSave);
+      });
+
+    } catch (error) {
+      list.innerHTML = `
+        <div class="error-state">
+          <p>Failed to load users: ${error instanceof Error ? error.message : 'Unknown error'}</p>
+          <button onclick="loadUsers()" class="btn btn-secondary">Retry</button>
+        </div>
+      `;
+    }
+  }
+
+  function handleQuotaChange(e: Event) {
+    const input = e.target as HTMLInputElement;
+    const userId = input.dataset.userId;
+    const original = parseInt(input.dataset.original || '0');
+    const current = parseInt(input.value);
+
+    const saveBtn = document.querySelector(
+      `.btn-save[data-user-id="${userId}"]`
+    ) as HTMLButtonElement;
+
+    if (saveBtn) {
+      saveBtn.disabled = current === original;
+    }
+  }
+
+  async function handleSave(e: Event) {
+    const btn = e.target as HTMLButtonElement;
+    const userId = btn.dataset.userId;
+
+    const input = document.querySelector(
+      `.quota-input[data-user-id="${userId}"]`
+    ) as HTMLInputElement;
+
+    const newValue = parseInt(input.value);
+
+    btn.disabled = true;
+    btn.textContent = 'Saving...';
+
+    try {
+      const response = await fetch(`/api/admin/users/${userId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ allowedCasts: newValue }),
+      });
+
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.error || 'Failed to update');
+      }
+
+      btn.textContent = 'Saved!';
+      btn.classList.add('btn-success');
+      input.dataset.original = String(newValue);
+
+      // Update remaining column
+      const row = btn.closest('tr');
+      const usedCell = row?.querySelector('td:nth-child(2)');
+      const remainingCell = row?.querySelector('td:nth-child(4)');
+
+      if (usedCell && remainingCell) {
+        const used = parseInt(usedCell.textContent || '0');
+        const remaining = newValue - used;
+        remainingCell.textContent = String(remaining);
+        remainingCell.classList.toggle('exhausted', remaining <= 0);
+      }
+
+      setTimeout(() => {
+        btn.textContent = 'Save';
+        btn.classList.remove('btn-success');
+      }, 2000);
+
+    } catch (error) {
+      btn.textContent = 'Error';
+      btn.classList.add('btn-error');
+
+      setTimeout(() => {
+        btn.textContent = 'Save';
+        btn.classList.remove('btn-error');
+        btn.disabled = false;
+      }, 2000);
+
+      console.error('Save error:', error);
+    }
+  }
+
+  // Search with debounce
+  const searchInput = document.getElementById('search-input') as HTMLInputElement;
+  searchInput.addEventListener('input', () => {
+    clearTimeout(debounceTimer);
+    debounceTimer = setTimeout(() => {
+      loadUsers(searchInput.value);
+    }, 300);
+  });
+
+  // Make function available globally for retry button
+  (window as any).loadUsers = loadUsers;
+
+  // Initial load
+  loadUsers();
+</script>
+
+<style is:global>
+  .admin-header {
+    margin-bottom: 2rem;
+  }
+
+  .admin-header h1 {
+    margin-bottom: 0.5rem;
+  }
+
+  .subtitle {
+    color: var(--text-secondary);
+    margin: 0;
+  }
+
+  .search-bar {
+    margin-bottom: 1.5rem;
+  }
+
+  .search-input {
+    width: 100%;
+    max-width: 300px;
+    padding: 0.5rem 1rem;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+    font-size: 0.875rem;
+  }
+
+  .search-input:focus {
+    outline: none;
+    border-color: var(--accent);
+  }
+
+  .users-list {
+    overflow-x: auto;
+  }
+
+  .loading, .empty-state, .error-state {
+    text-align: center;
+    padding: 3rem;
+    color: var(--text-secondary);
+  }
+
+  .error-state .btn {
+    margin-top: 1rem;
+  }
+
+  .users-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.875rem;
+    border: 1px solid var(--border);
+  }
+
+  .users-table th,
+  .users-table td {
+    padding: 0.75rem;
+    text-align: left;
+    border: 1px solid var(--border);
+  }
+
+  .users-table th {
+    background: var(--bg-secondary);
+    color: var(--text-secondary);
+    font-weight: 500;
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+
+  .users-table tbody tr:hover {
+    background: var(--bg-card);
+  }
+
+  .user-cell {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+  }
+
+  .username {
+    font-weight: 500;
+    color: var(--text-primary);
+  }
+
+  .user-id {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    font-family: monospace;
+  }
+
+  .col-numeric {
+    text-align: center;
+    font-family: monospace;
+    width: 80px;
+  }
+
+  .col-actions {
+    width: 80px;
+    text-align: center;
+  }
+
+  .exhausted {
+    color: #ef4444;
+    font-weight: 500;
+  }
+
+  .quota-input {
+    width: 60px;
+    padding: 0.25rem 0.5rem;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    background: var(--bg-card);
+    color: var(--text-primary);
+    text-align: center;
+    font-family: monospace;
+    font-size: 0.875rem;
+  }
+
+  .quota-input:focus {
+    outline: none;
+    border-color: var(--accent);
+  }
+
+  .btn-save {
+    padding: 0.25rem 0.75rem;
+    background: var(--accent);
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.75rem;
+    font-weight: 500;
+    transition: all 0.2s;
+  }
+
+  .btn-save:hover:not(:disabled) {
+    background: var(--accent-hover);
+  }
+
+  .btn-save:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .btn-save.btn-success {
+    background: #22c55e !important;
+  }
+
+  .btn-save.btn-error {
+    background: #ef4444 !important;
+  }
+
+  .btn-secondary {
+    background: var(--bg-card);
+    color: var(--text-primary);
+    border: 1px solid var(--border);
+    padding: 0.5rem 1rem;
+    border-radius: 6px;
+    cursor: pointer;
+  }
+
+  .btn-secondary:hover {
+    background: var(--bg-secondary);
+  }
+
+  @media (max-width: 768px) {
+    .users-table {
+      font-size: 0.75rem;
+    }
+
+    .users-table th,
+    .users-table td {
+      padding: 0.5rem;
+    }
+
+    .col-numeric {
+      width: 60px;
+    }
+
+    .quota-input {
+      width: 50px;
+    }
+  }
+</style>

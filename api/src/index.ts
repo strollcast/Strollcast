@@ -131,6 +131,29 @@ function toJobResponse(job: Job) {
   };
 }
 
+// ---------- User Types ----------
+
+interface User {
+  id: string;
+  github_username: string | null;
+  allowed_casts: number;
+  used_casts: number;
+  created_at: string;
+  updated_at: string;
+}
+
+function toUserResponse(user: User) {
+  return {
+    id: user.id,
+    githubUsername: user.github_username,
+    allowedCasts: user.allowed_casts,
+    usedCasts: user.used_casts,
+    remainingCasts: user.allowed_casts - user.used_casts,
+    createdAt: user.created_at,
+    updatedAt: user.updated_at,
+  };
+}
+
 // ---------- Helpers ----------
 
 function generateUUID(): string {
@@ -293,9 +316,14 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
     }
 
     try {
-      const body = (await request.json()) as { arxiv_url?: string; submitted_by?: string };
+      const body = (await request.json()) as {
+        arxiv_url?: string;
+        submitted_by?: string;
+        submitted_by_username?: string;
+      };
       const arxivUrl = body.arxiv_url;
       const submittedBy = body.submitted_by || null;
+      const submittedByUsername = body.submitted_by_username || null;
 
       if (!arxivUrl) {
         return Response.json(
@@ -310,6 +338,33 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
           { error: "Invalid arXiv URL format" },
           { status: 400, headers: corsHeaders }
         );
+      }
+
+      // Check user quota if submitted_by is provided
+      if (submittedBy) {
+        let user = await env.DB.prepare(
+          `SELECT * FROM users WHERE id = ?`
+        ).bind(submittedBy).first<User>();
+
+        if (!user) {
+          // Auto-create user with default quota
+          await env.DB.prepare(
+            `INSERT INTO users (id, github_username, allowed_casts, used_casts)
+             VALUES (?, ?, 1, 0)`
+          ).bind(submittedBy, submittedByUsername).run();
+
+          user = await env.DB.prepare(
+            `SELECT * FROM users WHERE id = ?`
+          ).bind(submittedBy).first<User>();
+        }
+
+        const remaining = user!.allowed_casts - user!.used_casts;
+        if (remaining <= 0) {
+          return Response.json(
+            { error: "Quota exceeded", quotaInfo: toUserResponse(user!) },
+            { status: 403, headers: corsHeaders }
+          );
+        }
       }
 
       // Check if episode already exists for this arXiv paper
@@ -395,6 +450,14 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
         stage: "generate_transcript",
         attempt: 1,
       } as QueueMessage);
+
+      // Decrement user quota after successful job creation
+      if (submittedBy) {
+        await env.DB.prepare(
+          `UPDATE users SET used_casts = used_casts + 1, updated_at = datetime('now')
+           WHERE id = ?`
+        ).bind(submittedBy).run();
+      }
 
       // Fetch the created job
       const job = await env.DB.prepare(`SELECT * FROM jobs WHERE id = ?`)
@@ -1052,6 +1115,137 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
         error: String(error),
       }, { status: 500, headers: corsHeaders });
     }
+  }
+
+  // ===== User Quota Endpoints =====
+
+  // GET /users/me/quota - Get current user's quota
+  if (path === "/users/me/quota" && request.method === "GET") {
+    const authHeader = request.headers.get("Authorization");
+    const apiKey = authHeader?.replace("Bearer ", "");
+
+    if (!apiKey || apiKey !== env.API_KEY) {
+      return Response.json(
+        { error: "Unauthorized" },
+        { status: 401, headers: corsHeaders }
+      );
+    }
+
+    const userId = request.headers.get("X-User-Id");
+    const userName = request.headers.get("X-User-Name");
+
+    if (!userId) {
+      return Response.json(
+        { error: "X-User-Id header required" },
+        { status: 400, headers: corsHeaders }
+      );
+    }
+
+    // Get or create user
+    let user = await env.DB.prepare(
+      `SELECT * FROM users WHERE id = ?`
+    ).bind(userId).first<User>();
+
+    if (!user) {
+      // Auto-create user with default quota
+      await env.DB.prepare(
+        `INSERT INTO users (id, github_username, allowed_casts, used_casts)
+         VALUES (?, ?, 1, 0)`
+      ).bind(userId, userName).run();
+
+      user = await env.DB.prepare(
+        `SELECT * FROM users WHERE id = ?`
+      ).bind(userId).first<User>();
+    }
+
+    return Response.json(toUserResponse(user!), { headers: corsHeaders });
+  }
+
+  // GET /admin/users - List all users
+  if (path === "/admin/users" && request.method === "GET") {
+    const authHeader = request.headers.get("Authorization");
+    const apiKey = authHeader?.replace("Bearer ", "");
+
+    if (!apiKey || apiKey !== env.API_KEY) {
+      return Response.json(
+        { error: "Unauthorized" },
+        { status: 401, headers: corsHeaders }
+      );
+    }
+
+    const search = url.searchParams.get("search");
+
+    let query = `SELECT * FROM users`;
+    const params: string[] = [];
+
+    if (search && search.trim()) {
+      query += ` WHERE github_username LIKE ? OR id LIKE ?`;
+      params.push(`%${search}%`, `%${search}%`);
+    }
+
+    query += ` ORDER BY created_at DESC`;
+
+    const stmt = params.length > 0
+      ? env.DB.prepare(query).bind(...params)
+      : env.DB.prepare(query);
+
+    const { results } = await stmt.all<User>();
+
+    return Response.json(
+      {
+        users: results.map(toUserResponse),
+        total: results.length,
+      },
+      { headers: corsHeaders }
+    );
+  }
+
+  // PATCH /admin/users/:id - Update user quota
+  const userUpdateMatch = path.match(/^\/admin\/users\/([^/]+)$/);
+  if (userUpdateMatch && request.method === "PATCH") {
+    const authHeader = request.headers.get("Authorization");
+    const apiKey = authHeader?.replace("Bearer ", "");
+
+    if (!apiKey || apiKey !== env.API_KEY) {
+      return Response.json(
+        { error: "Unauthorized" },
+        { status: 401, headers: corsHeaders }
+      );
+    }
+
+    const userId = userUpdateMatch[1];
+    const body = await request.json() as { allowedCasts?: number };
+
+    if (typeof body.allowedCasts !== "number" || body.allowedCasts < 0) {
+      return Response.json(
+        { error: "allowedCasts must be a non-negative number" },
+        { status: 400, headers: corsHeaders }
+      );
+    }
+
+    // Check if user exists
+    const existing = await env.DB.prepare(
+      `SELECT * FROM users WHERE id = ?`
+    ).bind(userId).first<User>();
+
+    if (!existing) {
+      return Response.json(
+        { error: "User not found" },
+        { status: 404, headers: corsHeaders }
+      );
+    }
+
+    // Update quota
+    await env.DB.prepare(
+      `UPDATE users SET allowed_casts = ?, updated_at = datetime('now')
+       WHERE id = ?`
+    ).bind(body.allowedCasts, userId).run();
+
+    const updated = await env.DB.prepare(
+      `SELECT * FROM users WHERE id = ?`
+    ).bind(userId).first<User>();
+
+    return Response.json(toUserResponse(updated!), { headers: corsHeaders });
   }
 
   return Response.json(

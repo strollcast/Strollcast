@@ -38,6 +38,7 @@ export const POST: APIRoute = async (context) => {
     // Forward to Worker API with user info
     const apiUrl = env.STROLLCAST_API_URL || import.meta.env.STROLLCAST_API_URL || 'https://api.strollcast.com';
     const userId = session.user?.id || session.user?.email;
+    const username = (session.user as any)?.username;
 
     const response = await fetch(`${apiUrl}/jobs`, {
       method: 'POST',
@@ -45,7 +46,11 @@ export const POST: APIRoute = async (context) => {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${apiKey}`,
       },
-      body: JSON.stringify({ arxiv_url, submitted_by: userId }),
+      body: JSON.stringify({
+        arxiv_url,
+        submitted_by: userId,
+        submitted_by_username: username,
+      }),
     });
 
     const data = await response.json();

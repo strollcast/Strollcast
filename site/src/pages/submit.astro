@@ -16,6 +16,10 @@ if (!session) {
       <h1>Submit a Paper</h1>
       <p class="subtitle">Enter an arXiv URL to generate a podcast episode</p>
 
+      <div id="quota-display" class="quota-display">
+        <span class="quota-loading">Loading quota...</span>
+      </div>
+
       <form id="submit-form" class="submit-form">
         <div class="form-group">
           <label for="arxiv-url">arXiv URL</label>
@@ -30,7 +34,7 @@ if (!session) {
           <p class="hint">Supports arxiv.org/abs/ and arxiv.org/pdf/ URLs</p>
         </div>
 
-        <button type="submit" class="btn btn-submit" id="submit-btn">
+        <button type="submit" class="btn btn-submit" id="submit-btn" disabled>
           <span class="btn-text">Generate Podcast</span>
           <span class="btn-loading" style="display: none;">Processing...</span>
         </button>
@@ -60,6 +64,56 @@ if (!session) {
   const btnLoading = submitBtn.querySelector('.btn-loading') as HTMLElement;
   const resultDiv = document.getElementById('result') as HTMLElement;
   const errorDiv = document.getElementById('error') as HTMLElement;
+  const quotaDisplay = document.getElementById('quota-display') as HTMLElement;
+
+  interface QuotaInfo {
+    remainingCasts: number;
+    allowedCasts: number;
+    usedCasts: number;
+  }
+
+  let userQuota: QuotaInfo | null = null;
+  let quotaExhausted = false;
+
+  async function loadQuota() {
+    try {
+      const response = await fetch('/api/quota');
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to load quota');
+      }
+
+      userQuota = data;
+
+      if (data.remainingCasts <= 0) {
+        quotaExhausted = true;
+        quotaDisplay.innerHTML = `
+          <span class="quota-exhausted">
+            You have used all your podcast credits (${data.usedCasts}/${data.allowedCasts}).
+          </span>
+        `;
+        submitBtn.disabled = true;
+        submitBtn.classList.add('btn-disabled');
+      } else {
+        quotaExhausted = false;
+        quotaDisplay.innerHTML = `
+          <span class="quota-info">
+            Remaining credits: <strong>${data.remainingCasts}</strong> of ${data.allowedCasts}
+          </span>
+        `;
+        submitBtn.disabled = false;
+      }
+
+    } catch (error) {
+      console.error('Error loading quota:', error);
+      quotaDisplay.innerHTML = `
+        <span class="quota-error">Could not load quota information</span>
+      `;
+      // Allow submission even if quota check fails (backend will enforce)
+      submitBtn.disabled = false;
+    }
+  }
 
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
@@ -86,6 +140,9 @@ if (!session) {
       const data = await response.json();
 
       if (!response.ok) {
+        if (response.status === 403 && data.error === 'Quota exceeded') {
+          throw new Error('You have no remaining podcast credits. Please contact the administrator.');
+        }
         throw new Error(data.error || 'Failed to submit job');
       }
 
@@ -111,6 +168,8 @@ if (!session) {
           <p class="job-status"><a href="/jobs" class="job-link">Job ID: ${data.jobId}</a></p>
           <a href="/jobs" class="btn btn-secondary">View My Jobs</a>
         `;
+        // Refresh quota after successful job submission
+        await loadQuota();
       }
       resultDiv.style.display = 'block';
       form.reset();
@@ -119,11 +178,16 @@ if (!session) {
       errorDiv.textContent = err instanceof Error ? err.message : 'An error occurred';
       errorDiv.style.display = 'block';
     } finally {
-      submitBtn.disabled = false;
+      if (!quotaExhausted) {
+        submitBtn.disabled = false;
+      }
       btnText.style.display = 'inline';
       btnLoading.style.display = 'none';
     }
   });
+
+  // Load quota on page load
+  loadQuota();
 </script>
 
 <style>
@@ -307,5 +371,39 @@ if (!session) {
     background: var(--bg-card);
     border-radius: 8px;
     margin: 0;
+  }
+
+  .quota-display {
+    margin-bottom: 1.5rem;
+    padding: 0.75rem 1rem;
+    background: var(--bg-secondary);
+    border-radius: 8px;
+    font-size: 0.875rem;
+  }
+
+  .quota-loading {
+    color: var(--text-secondary);
+  }
+
+  .quota-info {
+    color: var(--text-secondary);
+  }
+
+  .quota-info strong {
+    color: var(--accent);
+  }
+
+  .quota-exhausted {
+    color: #ef4444;
+  }
+
+  .quota-error {
+    color: var(--text-secondary);
+  }
+
+  .btn-disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    background: var(--bg-secondary) !important;
   }
 </style>
