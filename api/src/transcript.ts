@@ -49,18 +49,19 @@ Generate a Markdown script with this exact structure:
 
 ## Source Annotations
 
-Link podcast content to original paper sections using inline attributes:
+Link podcast content to original paper sections using inline attributes. **IMPORTANT**: When mentioning a cited paper that has an arXiv ID, include a \`link:\` field with format \`link: arxiv/XXXX.XXXXX\`.
 
 \`\`\`markdown
 **ERIC:** SGMV stands for Segmented Gather Matrix-Vector multiplication. {{page: 4, section: 3.1, excerpt: "We design a new CUDA kernel called SGMV..."}}
 
-**MAYA:** It groups requests by their LoRA adapter. {{"page": 5, "section": "3.2", "excerpt": "SGMV parallelizes the feature-weight multiplication..." }}
+**MAYA:** This builds on the LoRA technique for efficient fine-tuning. {{page: 2, section: "Background", link: arxiv/2106.09685}}
+
+**ERIC:** The transformer architecture from "Attention Is All You Need" is foundational here. {{page: 1, link: arxiv/1706.03762}}
 \`\`\`
 
-The \`{{page:...}}\` annotations are automatically stripped before TTS generation.
+The \`{{...}}\` annotations are automatically stripped before TTS generation.
 
-In the \`{{page:...}}\` annotations also add links to citations that are arhix papers. Pick the most important citation and add a link for it based on its arxiv id,
-eg link:arxiv/1706.03762. gg
+**Citation Links**: When the hosts mention a referenced paper that exists on arXiv, you MUST include a link in the annotation block. Extract arXiv IDs from the paper's references section (format: XXXX.XXXXX or older format like hep-th/XXXXXXX). Include at least 3-5 citation links throughout the script for the most important referenced papers.
 
 ## Script Requirements
 
