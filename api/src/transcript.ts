@@ -59,6 +59,9 @@ Link podcast content to original paper sections using inline attributes:
 
 The \`{{page:...}}\` annotations are automatically stripped before TTS generation.
 
+In the \`{{page:...}}\` annotations also add links to citations that are arhix papers. Pick the most important citation and add a link for it based on its arxiv id,
+eg link:arxiv/1706.03762. gg
+
 ## Script Requirements
 
 1. **Speaker tags**: Always use bold format \`**ERIC:**\` and \`**MAYA:**\`
@@ -123,7 +126,7 @@ interface PaperMetadata {
 
 interface TranscriptResult {
   script: string;
-  contentSource: "ar5iv" | "abstract";
+  contentSource: "ar5iv";
   metadata: PaperMetadata;
 }
 
@@ -275,34 +278,18 @@ async function fetchAr5ivContent(arxivId: string): Promise<string | null> {
 }
 
 /**
- * Fetch paper content with fallback strategy.
+ * Fetch paper content from ar5iv.
+ * Throws an error if the paper content cannot be fetched.
  */
 async function fetchPaperContent(
-  arxivId: string,
-  abstract: string
-): Promise<{ content: string; source: "ar5iv" | "abstract" }> {
-  // Try ar5iv first
+  arxivId: string
+): Promise<{ content: string; source: "ar5iv" }> {
   const ar5ivContent = await fetchAr5ivContent(arxivId);
   if (ar5ivContent) {
     return { content: ar5ivContent, source: "ar5iv" };
   }
 
-  // Fall back to abstract only
-  const fallback = `
-[Note: Full paper content could not be extracted. Generating script based on abstract
-and the model's knowledge of the paper.]
-
-Abstract:
-${abstract}
-
-Please generate the podcast script based on:
-1. The abstract above
-2. Your training knowledge about this paper and related work
-3. General understanding of the topic area
-
-Focus on explaining the key concepts clearly for a podcast audience.
-`;
-  return { content: fallback, source: "abstract" };
+  throw new Error(`Could not fetch paper content from ar5iv for arXiv ID: ${arxivId}`);
 }
 
 /**
@@ -362,7 +349,7 @@ export async function generateTranscript(
   const paper = await fetchArxivMetadata(arxivId);
 
   // Fetch content
-  const { content, source } = await fetchPaperContent(arxivId, paper.abstract);
+  const { content, source } = await fetchPaperContent(arxivId);
 
   // Generate script
   const script = await generateScriptWithClaude(paper, content, anthropicApiKey);
