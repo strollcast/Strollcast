@@ -21,7 +21,7 @@ import (
 	"time"
 )
 
-// ---------- Container Status Types (T003-T006) ----------
+// ---------- Container Status Types ----------
 
 // ContainerStatus represents the current state of the FFmpeg container
 type ContainerStatus struct {
@@ -31,31 +31,12 @@ type ContainerStatus struct {
 	SegmentsTotal      int        `json:"segments_total"`      // Total segments to process
 	SegmentsDownloaded int        `json:"segments_downloaded"` // Segments downloaded so far
 	LastError          string     `json:"last_error"`          // Most recent error message
-	LastHeartbeat      *time.Time `json:"last_heartbeat"`      // When last heartbeat was sent
 }
-
-// HeartbeatRequest is sent from container to Durable Object
-type HeartbeatRequest struct {
-	JobID    string  `json:"job_id"`
-	State    string  `json:"state"`
-	Progress float64 `json:"progress,omitempty"`
-}
-
-// HeartbeatResponse is returned by Durable Object
-type HeartbeatResponse struct {
-	Acknowledged    bool   `json:"acknowledged"`
-	TimeoutExtended bool   `json:"timeout_extended"`
-	Error           string `json:"error,omitempty"`
-}
-
-// StatusResponse matches ContainerStatus for JSON serialization
-type StatusResponse = ContainerStatus
 
 // Global container status with mutex for thread-safe access
 var (
 	containerStatus = ContainerStatus{State: "idle"}
 	statusMutex     sync.RWMutex
-	heartbeatStop   chan struct{}
 	shutdownCtx     context.Context
 	shutdownCancel  context.CancelFunc
 )
@@ -115,95 +96,7 @@ func main() {
 	}
 }
 
-// ---------- Heartbeat Functions (US1: T009-T011) ----------
-
-// sendHeartbeat sends a heartbeat to the Durable Object to renew activity timeout
-func sendHeartbeat(jobID string, progress float64) error {
-	heartbeatReq := HeartbeatRequest{
-		JobID:    jobID,
-		State:    "processing",
-		Progress: progress,
-	}
-
-	body, err := json.Marshal(heartbeatReq)
-	if err != nil {
-		return fmt.Errorf("marshal heartbeat request: %w", err)
-	}
-
-	// POST to localhost (container's own endpoint, proxied to Durable Object)
-	req, err := http.NewRequest(http.MethodPost, "http://localhost:8080/heartbeat", bytes.NewReader(body))
-	if err != nil {
-		return fmt.Errorf("create heartbeat request: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-
-	client := &http.Client{Timeout: 5 * time.Second}
-	resp, err := client.Do(req)
-	if err != nil {
-		return fmt.Errorf("send heartbeat: %w", err)
-	}
-	defer resp.Body.Close()
-
-	var heartbeatResp HeartbeatResponse
-	if err := json.NewDecoder(resp.Body).Decode(&heartbeatResp); err != nil {
-		return fmt.Errorf("decode heartbeat response: %w", err)
-	}
-
-	if !heartbeatResp.Acknowledged {
-		return fmt.Errorf("heartbeat not acknowledged: %s", heartbeatResp.Error)
-	}
-
-	// Update last heartbeat timestamp
-	statusMutex.Lock()
-	now := time.Now()
-	containerStatus.LastHeartbeat = &now
-	statusMutex.Unlock()
-
-	fmt.Printf("[%s] Heartbeat sent (progress: %.2f), timeout extended: %v\n", jobID, progress, heartbeatResp.TimeoutExtended)
-	return nil
-}
-
-// startHeartbeat starts a goroutine that sends heartbeats every 2 minutes
-func startHeartbeat(jobID string) {
-	heartbeatStop = make(chan struct{})
-	ticker := time.NewTicker(2 * time.Minute)
-
-	go func() {
-		defer ticker.Stop()
-		for {
-			select {
-			case <-ticker.C:
-				// Calculate progress based on segments downloaded
-				statusMutex.RLock()
-				progress := 0.0
-				if containerStatus.SegmentsTotal > 0 {
-					progress = float64(containerStatus.SegmentsDownloaded) / float64(containerStatus.SegmentsTotal)
-				}
-				statusMutex.RUnlock()
-
-				if err := sendHeartbeat(jobID, progress); err != nil {
-					fmt.Printf("[%s] Heartbeat error: %v\n", jobID, err)
-				}
-			case <-heartbeatStop:
-				fmt.Printf("[%s] Heartbeat stopped\n", jobID)
-				return
-			case <-shutdownCtx.Done():
-				fmt.Printf("[%s] Heartbeat stopped due to shutdown\n", jobID)
-				return
-			}
-		}
-	}()
-}
-
-// stopHeartbeat signals the heartbeat goroutine to stop
-func stopHeartbeat() {
-	if heartbeatStop != nil {
-		close(heartbeatStop)
-		heartbeatStop = nil
-	}
-}
-
-// ---------- Status Handler (US2: T019-T020) ----------
+// ---------- Status Handler ----------
 
 func handleStatus(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
@@ -256,17 +149,12 @@ func handleConcat(w http.ResponseWriter, r *http.Request) {
 		SegmentsTotal:      len(req.Segments),
 		SegmentsDownloaded: 0,
 		LastError:          "",
-		LastHeartbeat:      nil,
 	}
 	statusMutex.Unlock()
 
-	// T013: Start heartbeat goroutine
-	startHeartbeat(req.EpisodeID)
-
 	// Helper to handle errors with status update
 	handleError := func(message string, status int) {
-		// T016: Stop heartbeat and set state to "error" on failure
-		stopHeartbeat()
+		// T016: Set state to "error" on failure
 		statusMutex.Lock()
 		containerStatus.State = "error"
 		containerStatus.LastError = message
@@ -402,8 +290,7 @@ func handleConcat(w http.ResponseWriter, r *http.Request) {
 	}
 	fmt.Printf("[%s] Done: uploading result.\n", req.EpisodeID)
 
-	// T015: Stop heartbeat and reset state to "idle" on success
-	stopHeartbeat()
+	// T015: Reset state to "idle" on success
 	statusMutex.Lock()
 	containerStatus = ContainerStatus{
 		State:              "idle",
@@ -412,7 +299,6 @@ func handleConcat(w http.ResponseWriter, r *http.Request) {
 		SegmentsTotal:      0,
 		SegmentsDownloaded: 0,
 		LastError:          "",
-		LastHeartbeat:      nil,
 	}
 	statusMutex.Unlock()
 

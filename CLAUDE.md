@@ -129,11 +129,11 @@ Episodes are served from: `https://released.strollcast.com/episodes/{episode_id}
 
 The FFmpeg container processes audio concatenation jobs that can take 10-40 minutes. To prevent the container from being killed mid-processing:
 
-### Heartbeat Mechanism
+### Keepalive Polling
 
-- **Container → Worker**: Every 2 minutes, the Go container sends a heartbeat to `/heartbeat`
-- **Worker response**: Calls `renewActivityTimeout()` to reset the 5-minute `sleepAfter` timer
-- **Automatic start/stop**: Heartbeats start when a job begins, stop on completion or error
+- **Worker → Container**: Every 2 minutes, the Durable Object polls the container's `/status` endpoint
+- **If processing**: Calls `renewActivityTimeout()` to reset the 5-minute `sleepAfter` timer
+- **Automatic start/stop**: Polling starts when `/concat` is called, stops when container is no longer processing
 
 ### Container Status Endpoint
 
@@ -145,8 +145,7 @@ Query the container's current state via `GET /status`:
   "started_at": "2026-01-17T10:30:00Z",
   "segments_total": 150,
   "segments_downloaded": 75,
-  "last_error": "",
-  "last_heartbeat": "2026-01-17T10:32:00Z"
+  "last_error": ""
 }
 ```
 
@@ -155,7 +154,7 @@ States: `idle`, `processing`, `error`
 ### Timeouts & Limits
 
 - **sleepAfter**: 5 minutes (container goes to sleep after inactivity)
-- **Heartbeat interval**: 2 minutes (must be < sleepAfter)
+- **Polling interval**: 2 minutes (must be < sleepAfter)
 - **Max processing time**: 60 minutes (prevents zombie containers)
 - **Max instances**: 5 concurrent containers
 

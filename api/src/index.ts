@@ -25,50 +25,50 @@ export class FFmpegContainer extends Container {
     console.error("FFmpeg container error:", error);
   }
 
-  async alarm(): Promise<void> {
-    // Handle the sleep alarm - this is called when sleepAfter duration elapses
-    console.log("FFmpeg container alarm triggered - sleep timeout reached");
-  }
-
   /**
-   * Handle heartbeat requests from the container to renew activity timeout.
-   * This prevents the container from being killed during long-running FFmpeg jobs.
+   * Alarm handler - polls container status and renews timeout if processing.
+   * This is called every 2 minutes while an alarm is scheduled.
    */
-  async handleHeartbeat(request: Request): Promise<Response> {
+  async alarm(): Promise<void> {
     try {
-      const body = await request.json() as { job_id: string; state: string; progress?: number };
-      console.log(`Heartbeat received for job: ${body.job_id} (state: ${body.state}, progress: ${body.progress ?? 'N/A'})`);
+      // Fetch status from the container
+      const response = await super.fetch(new Request("http://container/status"));
+      if (!response.ok) {
+        console.log("Container status check failed, not renewing timeout");
+        return;
+      }
 
-      // Renew the activity timeout to prevent sleepAfter from triggering
-      await this.renewActivityTimeout();
-      console.log("Activity timeout renewed");
+      const status = await response.json() as { state: string; job_id: string };
 
-      return Response.json({
-        acknowledged: true,
-        timeout_extended: true,
-      });
+      if (status.state === "processing") {
+        // Container is still processing - renew the activity timeout
+        await this.renewActivityTimeout();
+        console.log(`Activity timeout renewed for job: ${status.job_id}`);
+
+        // Schedule next check in 2 minutes
+        await this.ctx.storage.setAlarm(Date.now() + 2 * 60 * 1000);
+      } else {
+        console.log(`Container state is '${status.state}', not scheduling next alarm`);
+      }
     } catch (error) {
-      console.error("Heartbeat handler error:", error);
-      return Response.json({
-        acknowledged: false,
-        timeout_extended: false,
-        error: String(error),
-      }, { status: 500 });
+      console.error("Alarm handler error:", error);
     }
   }
 
   /**
-   * Override fetch to handle heartbeat requests before passing to container.
+   * Override fetch to start polling when a job begins.
    */
   override async fetch(request: Request): Promise<Response> {
     const url = new URL(request.url);
 
-    // Handle heartbeat requests directly in the Durable Object
-    if (url.pathname === "/heartbeat" && request.method === "POST") {
-      return this.handleHeartbeat(request);
+    // For concat requests, start the keepalive polling
+    if (url.pathname === "/concat" && request.method === "POST") {
+      // Schedule first status check in 2 minutes
+      await this.ctx.storage.setAlarm(Date.now() + 2 * 60 * 1000);
+      console.log("Scheduled keepalive polling for long-running job");
     }
 
-    // Pass all other requests to the container
+    // Pass all requests to the container
     return super.fetch(request);
   }
 }
