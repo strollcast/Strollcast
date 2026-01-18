@@ -9,6 +9,21 @@ import Layout from '../../layouts/Layout.astro';
   </header>
 
   <section class="content">
+    <div class="screenshots">
+      <figure>
+        <img src="/screenshots/android-main.png" alt="Strollcast Android main screen showing episode list" />
+        <figcaption>Episode List</figcaption>
+      </figure>
+      <figure>
+        <img src="/screenshots/android-player.png" alt="Strollcast Android player screen" />
+        <figcaption>Player</figcaption>
+      </figure>
+      <figure>
+        <img src="/screenshots/android-transcript.png" alt="Strollcast Android transcript view" />
+        <figcaption>Transcript</figcaption>
+      </figure>
+    </div>
+
     <h2>Troubleshooting</h2>
 
     <h3>App crashes or doesn't load episodes</h3>
@@ -110,4 +125,40 @@ import Layout from '../../layouts/Layout.astro';
     color: var(--accent);
   }
 
+  .screenshots {
+    display: flex;
+    gap: 1.5rem;
+    justify-content: center;
+    margin-bottom: 3rem;
+    flex-wrap: wrap;
+  }
+
+  .screenshots figure {
+    margin: 0;
+    text-align: center;
+  }
+
+  .screenshots img {
+    max-height: 400px;
+    width: auto;
+    border-radius: 12px;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+  }
+
+  .screenshots figcaption {
+    margin-top: 0.75rem;
+    font-size: 0.9rem;
+    color: var(--text-secondary);
+  }
+
+  @media (max-width: 640px) {
+    .screenshots {
+      flex-direction: column;
+      align-items: center;
+    }
+
+    .screenshots img {
+      max-height: 300px;
+    }
+  }
 </style>
